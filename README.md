@@ -1,3 +1,3 @@
-# Welcome to your Lovable project
+# MM (IMS-MM)
 
-TODO: Document your project here
+Ứng dụng quản lý kho / IMS (frontend + backend + script cơ sở dữ liệu).
