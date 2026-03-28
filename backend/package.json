@@ -1,0 +1,22 @@
+{
+  "name": "ems-warehouse-api",
+  "version": "1.0.0",
+  "description": "Backend API EMS Warehouse - Node.js thuần + SQL Server",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test:db": "node scripts/test-connection.js",
+    "check:db": "node scripts/check-db-alignment.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "mssql": "^11.0.1",
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
