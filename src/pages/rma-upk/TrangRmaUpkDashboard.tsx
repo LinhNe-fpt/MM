@@ -1,7 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Package, Truck, AlertCircle, Shield } from "lucide-react";
-import { rmaUpkGet, type RmaUpkMe, type RmaUpkTransferPending } from "@/lib/rmaUpkApi";
+import { Package, Truck, AlertCircle, Shield, PieChart as BieuDoTronIcon } from "lucide-react";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  rmaUpkGet,
+  type RmaUpkMe,
+  type RmaUpkStockSkuCounts,
+  type RmaUpkTransferPending,
+} from "@/lib/rmaUpkApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
@@ -14,6 +20,7 @@ export default function TrangRmaUpkDashboard() {
   const [me, setMe] = useState<RmaUpkMe | null>(null);
   const [pending, setPending] = useState<RmaUpkTransferPending[]>([]);
   const [tongTon, setTongTon] = useState<{ UPK: number; RMA: number }>({ UPK: 0, RMA: 0 });
+  const [demMa, setDemMa] = useState<RmaUpkStockSkuCounts | null>(null);
   const [loi, setLoi] = useState("");
   const [tai, setTai] = useState(true);
 
@@ -23,10 +30,11 @@ export default function TrangRmaUpkDashboard() {
       setTai(true);
       setLoi("");
       try {
-        const [m, p, tong] = await Promise.all([
+        const [m, p, tong, dem] = await Promise.all([
           rmaUpkGet<RmaUpkMe>("/api/rma-upk/me"),
           rmaUpkGet<RmaUpkTransferPending[]>("/api/rma-upk/transfers/pending"),
           rmaUpkGet<{ UPK: number; RMA: number }>("/api/rma-upk/stock-summary"),
+          rmaUpkGet<RmaUpkStockSkuCounts>(`/api/rma-upk/stock-sku-counts?kho=${encodeURIComponent(maKho)}`),
         ]);
         if (!cancel) {
           setMe(m);
@@ -35,6 +43,7 @@ export default function TrangRmaUpkDashboard() {
             UPK: Number(tong?.UPK) || 0,
             RMA: Number(tong?.RMA) || 0,
           });
+          setDemMa(dem);
         }
       } catch (e) {
         if (!cancel) setLoi(e instanceof Error ? e.message : t("rmaUpk.error_load"));
@@ -45,7 +54,23 @@ export default function TrangRmaUpkDashboard() {
     return () => {
       cancel = true;
     };
-  }, [t]);
+  }, [t, maKho]);
+
+  const pendingLoc = useMemo(
+    () => pending.filter((p) => p.MaKhoNguon === maKho || p.MaKhoDich === maKho),
+    [pending, maKho],
+  );
+
+  const duLieuBieuDo = useMemo(() => {
+    const co = demMa?.coTon ?? 0;
+    const het = demMa?.hetHang ?? 0;
+    return [
+      { key: "in", name: t("rmaUpk.dash_chart_in"), value: co, fill: "var(--dash-stock-in, #22c55e)" },
+      { key: "out", name: t("rmaUpk.dash_chart_out"), value: het, fill: "var(--dash-stock-out, #94a3b8)" },
+    ];
+  }, [demMa, t]);
+
+  const tongMa = (demMa?.coTon ?? 0) + (demMa?.hetHang ?? 0);
 
   if (tai) {
     return (
@@ -54,8 +79,6 @@ export default function TrangRmaUpkDashboard() {
       </div>
     );
   }
-
-  const pendingLoc = pending.filter((p) => p.MaKhoNguon === maKho || p.MaKhoDich === maKho);
 
   if (loi) {
     return (
@@ -100,7 +123,13 @@ export default function TrangRmaUpkDashboard() {
             </div>
             <div>
               <span className="text-muted-foreground">{t("rmaUpk.dash_write_wh")}</span>{" "}
-              <span className="font-medium">{me.isAdmin ? t("rmaUpk.dash_write_both_admin") : me.khoGhi ?? "—"}</span>
+              <span className="font-medium">
+                {me.ghiHaiKhoMm ?? me.isAdmin
+                  ? me.isAdmin
+                    ? t("rmaUpk.dash_write_both_admin")
+                    : t("rmaUpk.dash_write_both_mm_staff")
+                  : me.khoGhi ?? "—"}
+              </span>
             </div>
             <div>
               <span className="text-muted-foreground">{t("rmaUpk.dash_read_stock")}</span>{" "}
@@ -164,6 +193,71 @@ export default function TrangRmaUpkDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-border/80">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BieuDoTronIcon className="h-4 w-4 text-primary" />
+            {t("rmaUpk.dash_chart_title")}
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">{t("rmaUpk.dash_chart_sub", { kho: maKho })}</p>
+        </CardHeader>
+        <CardContent>
+          {tongMa === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">{t("rmaUpk.dash_chart_empty")}</p>
+          ) : (
+            <div className="flex flex-col lg:flex-row gap-6 lg:items-center lg:justify-between">
+              <div className="h-[min(280px,42vh)] w-full max-w-md mx-auto lg:mx-0 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={duLieuBieuDo}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="52%"
+                      outerRadius="78%"
+                      paddingAngle={2}
+                    >
+                      {duLieuBieuDo.map((d) => (
+                        <Cell key={d.key} fill={d.fill} stroke="hsl(var(--background))" strokeWidth={2} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(val: number, _n, item) => {
+                        const payload = item?.payload as { name?: string; value?: number } | undefined;
+                        const v = Number(val);
+                        const pct = tongMa > 0 ? ((v / tongMa) * 100).toFixed(1) : "0";
+                        return [`${v.toLocaleString()} (${pct}%)`, payload?.name ?? ""];
+                      }}
+                    />
+                    <Legend verticalAlign="bottom" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                <div className="rounded-lg border border-border bg-muted/25 p-3">
+                  <p className="text-xs text-muted-foreground">{t("rmaUpk.dash_chart_total")}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-1">{tongMa.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-3">
+                  <p className="text-xs text-muted-foreground">{t("rmaUpk.dash_chart_in")}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-700 dark:text-emerald-400">
+                    {(demMa?.coTon ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-400/30 bg-slate-500/5 p-3">
+                  <p className="text-xs text-muted-foreground">{t("rmaUpk.dash_chart_out")}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-1 text-slate-700 dark:text-slate-300">
+                    {(demMa?.hetHang ?? 0).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

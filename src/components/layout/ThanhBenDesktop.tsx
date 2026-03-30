@@ -280,8 +280,8 @@ export function ThanhBenDesktop() {
           </div>
         )}
 
-        {/* Kho phụ UPK / RMA — admin mở được; user upk/rma vào thẳng luồng tương ứng, không thấy MM */}
-        {quyen === "admin" && (
+        {/* Kho phụ UPK / RMA — admin & nhân viên MM; user chỉ upk/rma vào thẳng luồng tương ứng */}
+        {(quyen === "admin" || quyen === "nhan_vien") && (
           <div className="pt-2 mt-1 border-t border-border/60 space-y-0.5">
             {!thuGon && (
               <p className="px-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">

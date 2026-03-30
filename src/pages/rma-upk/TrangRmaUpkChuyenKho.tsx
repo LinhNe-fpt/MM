@@ -41,7 +41,9 @@ export default function TrangRmaUpkChuyenKho() {
     load();
   }, [load]);
 
-  const laBenNhan = (phieu: RmaUpkTransferPending) => me?.isAdmin || me?.khoGhi === phieu.MaKhoDich;
+  const capGhiHaiKho = !!(me?.ghiHaiKhoMm ?? me?.isAdmin);
+  const laBenNhan = (phieu: RmaUpkTransferPending) =>
+    capGhiHaiKho || me?.khoGhi === phieu.MaKhoDich;
 
   async function xacNhan(id: number) {
     try {
@@ -63,7 +65,7 @@ export default function TrangRmaUpkChuyenKho() {
     }
     try {
       const body: Record<string, unknown> = { lines, ghiChu: ghiChu.trim() || undefined };
-      if (me?.isAdmin) {
+      if (me?.ghiHaiKhoMm ?? me?.isAdmin) {
         body.maKhoNguon = maKho;
         body.maKhoDich = maKhoKia;
       }
@@ -144,7 +146,7 @@ export default function TrangRmaUpkChuyenKho() {
         </CardContent>
       </Card>
 
-      {me?.isAdmin && (
+      {(me?.ghiHaiKhoMm ?? me?.isAdmin) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t("rmaUpk.tr_admin_card")}</CardTitle>
@@ -198,7 +200,7 @@ export default function TrangRmaUpkChuyenKho() {
         </Card>
       )}
 
-      {me && !me.isAdmin && me.khoGhi && (
+      {me && !(me.ghiHaiKhoMm ?? me.isAdmin) && me.khoGhi && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t("rmaUpk.tr_user_card", { kho: me.khoGhi })}</CardTitle>

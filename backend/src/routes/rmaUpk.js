@@ -110,6 +110,23 @@ function parseKhoQuery(v) {
   return "ALL";
 }
 
+/** Tham số query ISO / datetime-local → Date hoặc null */
+function parseDateTimeParam(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+/** LIKE %chuỗi% an toàn (bỏ % _ [) */
+function likeChuaMa(v) {
+  const s = String(v || "").trim().slice(0, 100);
+  if (!s) return null;
+  const safe = s.replace(/[%_\[\]]/g, "");
+  if (!safe) return null;
+  return `%${safe}%`;
+}
+
 async function upsertRmaUpkTonTheoMa(pool, rows, maKho) {
   const BATCH = 80;
   const k = String(maKho).toUpperCase();
@@ -135,7 +152,7 @@ async function upsertRmaUpkTonTheoMa(pool, rows, maKho) {
 // POST /api/rma-upk/import-baocao — 2 sheet cuối file .xlsx (2 ca gần nhất), gộp theo mã (sheet sau ghi đè), cập nhật tồn kho UPK
 router.post("/import-baocao", uploadBaocao.single("file"), async (req, res) => {
   const u = req.rmaUpk;
-  if (!u.isAdmin && u.khoGhi !== "UPK") {
+  if (!u.ghiHaiKhoMm && u.khoGhi !== "UPK") {
     return res.status(403).json({ error: "Chi admin hoac nhom UPK moi import ton tu bao cao" });
   }
 
@@ -177,7 +194,7 @@ router.post("/import-baocao", uploadBaocao.single("file"), async (req, res) => {
 // Form field dryRun=1 chỉ phân tích, không ghi DB; trả previewRows (model, mô tả, vị trí nếu có).
 router.post("/import-baocao-rma", uploadBaocao.single("file"), async (req, res) => {
   const u = req.rmaUpk;
-  if (!u.isAdmin && u.khoGhi !== "RMA") {
+  if (!u.ghiHaiKhoMm && u.khoGhi !== "RMA") {
     return res.status(403).json({ error: "Chi admin hoac nhom RMA moi import ton tu bao cao RMA" });
   }
 
@@ -246,9 +263,10 @@ router.get("/me", (req, res) => {
     quyen: u.quyen,
     khoGhi: u.khoGhi,
     isAdmin: u.isAdmin,
-    /** UI: được thao tác ghi trên kho nào (null = cả hai nếu admin) */
-    coTheGhiUPK: u.isAdmin || u.khoGhi === "UPK",
-    coTheGhiRMA: u.isAdmin || u.khoGhi === "RMA",
+    ghiHaiKhoMm: u.ghiHaiKhoMm,
+    /** UI: được thao tác ghi trên kho nào */
+    coTheGhiUPK: u.ghiHaiKhoMm || u.khoGhi === "UPK",
+    coTheGhiRMA: u.ghiHaiKhoMm || u.khoGhi === "RMA",
   });
 });
 
@@ -316,7 +334,35 @@ router.get("/stock-summary", async (_req, res) => {
   }
 });
 
-// GET /api/rma-upk/adjustments?kho=UPK|RMA&limit=50&doiTac=SEVT|... — UPK: union 4 bảng đối tác; RMA: RmaUpkDieuChinh
+// GET /api/rma-upk/stock-sku-counts?kho=UPK|RMA — số mã linh kiện có tồn > 0 vs tồn = 0 (theo kho)
+router.get("/stock-sku-counts", async (req, res) => {
+  const k = String(req.query.kho || "").toUpperCase();
+  if (k !== "UPK" && k !== "RMA") {
+    return res.status(400).json({ error: "Thieu kho (UPK hoac RMA)" });
+  }
+  try {
+    const pool = await getPool();
+    const rs = await pool
+      .request()
+      .input("K", sql.NVarChar(10), k)
+      .query(`
+        SELECT
+          ISNULL(SUM(CASE WHEN SoLuongTon > 0 THEN 1 ELSE 0 END), 0) AS SoMaCoTon,
+          ISNULL(SUM(CASE WHEN SoLuongTon = 0 THEN 1 ELSE 0 END), 0) AS SoMaHetHang
+        FROM dbo.RmaUpkTonKho
+        WHERE MaKho = @K
+      `);
+    const row = rs.recordset[0] || {};
+    res.json({
+      coTon: Number(row.SoMaCoTon) || 0,
+      hetHang: Number(row.SoMaHetHang) || 0,
+    });
+  } catch (err) {
+    xuLyLoiSql(res, err, "Loi dem ma ton kho");
+  }
+});
+
+// GET /api/rma-upk/adjustments?kho=UPK|RMA&limit=50&doiTac=SEVT|...&tuNgay=&denNgay=&q=
 router.get("/adjustments", async (req, res) => {
   const k = String(req.query.kho || "").toUpperCase();
   if (k !== "UPK" && k !== "RMA") {
@@ -325,10 +371,16 @@ router.get("/adjustments", async (req, res) => {
   const dt = String(req.query.doiTac || "")
     .trim()
     .toUpperCase();
-  const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || "50"), 10) || 50));
+  const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || "100"), 10) || 100));
+  const tu = parseDateTimeParam(req.query.tuNgay);
+  const den = parseDateTimeParam(req.query.denNgay);
+  const qLike = likeChuaMa(req.query.q);
   try {
     const pool = await getPool();
     const rq = pool.request().input("Lim", sql.Int, limit);
+    rq.input("Tu", sql.DateTime2, tu);
+    rq.input("Den", sql.DateTime2, den);
+    rq.input("QLike", sql.NVarChar(120), qLike);
     let q;
     if (k === "RMA") {
       rq.input("DoiTacTag", sql.NVarChar(20), dt || null);
@@ -350,6 +402,9 @@ router.get("/adjustments", async (req, res) => {
         FROM dbo.RmaUpkDieuChinh d
         LEFT JOIN dbo.NguoiDung n ON n.MaNguoiDung = d.MaNguoiDung
         WHERE d.MaKho = N'RMA'
+          AND (@Tu IS NULL OR d.NgayGio >= @Tu)
+          AND (@Den IS NULL OR d.NgayGio <= @Den)
+          AND (@QLike IS NULL OR d.MaLinhKien LIKE @QLike)
           AND (
             @DoiTacTag IS NULL
             OR (
@@ -373,6 +428,9 @@ router.get("/adjustments", async (req, res) => {
           n.TaiKhoan AS TaiKhoanNguoiTao, n.HoTen AS HoTenNguoiTao
         FROM ${tbl} d
         LEFT JOIN dbo.NguoiDung n ON n.MaNguoiDung = d.MaNguoiDung
+        WHERE (@Tu IS NULL OR d.NgayGio >= @Tu)
+          AND (@Den IS NULL OR d.NgayGio <= @Den)
+          AND (@QLike IS NULL OR d.MaLinhKien LIKE @QLike)
         ORDER BY d.NgayGio DESC
       `;
     } else if (k === "UPK") {
@@ -382,12 +440,16 @@ router.get("/adjustments", async (req, res) => {
           n.TaiKhoan AS TaiKhoanNguoiTao, n.HoTen AS HoTenNguoiTao
         FROM (
           SELECT MaDieuChinh, N'UPK' AS MaKho, N'SEVT' AS DoiTac, MaLinhKien, Loai, SoLuong, TonSau, NgayGio, GhiChu, MaNguoiDung FROM dbo.RmaUpkLichSu_SEVT
+          WHERE (@Tu IS NULL OR NgayGio >= @Tu) AND (@Den IS NULL OR NgayGio <= @Den) AND (@QLike IS NULL OR MaLinhKien LIKE @QLike)
           UNION ALL
           SELECT MaDieuChinh, N'UPK', N'VENDOR', MaLinhKien, Loai, SoLuong, TonSau, NgayGio, GhiChu, MaNguoiDung FROM dbo.RmaUpkLichSu_VENDOR
+          WHERE (@Tu IS NULL OR NgayGio >= @Tu) AND (@Den IS NULL OR NgayGio <= @Den) AND (@QLike IS NULL OR MaLinhKien LIKE @QLike)
           UNION ALL
           SELECT MaDieuChinh, N'UPK', N'IQC', MaLinhKien, Loai, SoLuong, TonSau, NgayGio, GhiChu, MaNguoiDung FROM dbo.RmaUpkLichSu_IQC
+          WHERE (@Tu IS NULL OR NgayGio >= @Tu) AND (@Den IS NULL OR NgayGio <= @Den) AND (@QLike IS NULL OR MaLinhKien LIKE @QLike)
           UNION ALL
           SELECT MaDieuChinh, N'UPK', N'MM', MaLinhKien, Loai, SoLuong, TonSau, NgayGio, GhiChu, MaNguoiDung FROM dbo.RmaUpkLichSu_MM
+          WHERE (@Tu IS NULL OR NgayGio >= @Tu) AND (@Den IS NULL OR NgayGio <= @Den) AND (@QLike IS NULL OR MaLinhKien LIKE @QLike)
         ) x
         LEFT JOIN dbo.NguoiDung n ON n.MaNguoiDung = x.MaNguoiDung
         ORDER BY x.NgayGio DESC
@@ -397,6 +459,58 @@ router.get("/adjustments", async (req, res) => {
     res.json(result.recordset);
   } catch (err) {
     xuLyLoiSql(res, err, "Loi doc lich su nhap xuat");
+  }
+});
+
+// GET /api/rma-upk/transfers/history?kho=UPK|RMA&limit=50&tuNgay=&denNgay=
+router.get("/transfers/history", async (req, res) => {
+  const k = String(req.query.kho || "").toUpperCase();
+  if (k !== "UPK" && k !== "RMA") {
+    return res.status(400).json({ error: "Thieu kho (UPK hoac RMA)" });
+  }
+  const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || "80"), 10) || 80));
+  const tu = parseDateTimeParam(req.query.tuNgay);
+  const den = parseDateTimeParam(req.query.denNgay);
+  try {
+    const pool = await getPool();
+    const rq = pool.request().input("Lim", sql.Int, limit).input("K", sql.NVarChar(10), k);
+    rq.input("Tu", sql.DateTime2, tu);
+    rq.input("Den", sql.DateTime2, den);
+    const result = await rq.query(`
+      SELECT TOP (@Lim)
+        c.MaChuyen,
+        c.MaKhoNguon,
+        c.MaKhoDich,
+        c.NgayTao,
+        c.NgayXacNhan,
+        c.GhiChu,
+        nt.TaiKhoan AS TaiKhoanNguoiTao,
+        nt.HoTen AS HoTenNguoiTao,
+        nx.TaiKhoan AS TaiKhoanXacNhan,
+        nx.HoTen AS HoTenNguoiXacNhan
+      FROM dbo.RmaUpkChuyenKho c
+      LEFT JOIN dbo.NguoiDung nt ON nt.MaNguoiDung = c.MaNguoiTao
+      LEFT JOIN dbo.NguoiDung nx ON nx.MaNguoiDung = c.MaNguoiXacNhan
+      WHERE c.TrangThai = N'HOAN_THANH'
+        AND (c.MaKhoNguon = @K OR c.MaKhoDich = @K)
+        AND (@Tu IS NULL OR COALESCE(c.NgayXacNhan, c.NgayTao) >= @Tu)
+        AND (@Den IS NULL OR COALESCE(c.NgayXacNhan, c.NgayTao) <= @Den)
+      ORDER BY COALESCE(c.NgayXacNhan, c.NgayTao) DESC
+    `);
+    const rows = result.recordset;
+    const out = [];
+    for (const row of rows) {
+      const ct = await pool
+        .request()
+        .input("Mc", sql.Int, row.MaChuyen)
+        .query(
+          `SELECT MaLinhKien, SoLuong FROM dbo.RmaUpkChuyenKhoChiTiet WHERE MaChuyen = @Mc ORDER BY MaLinhKien`,
+        );
+      out.push({ ...row, chiTiet: ct.recordset });
+    }
+    res.json(out);
+  } catch (err) {
+    xuLyLoiSql(res, err, "Loi doc lich su chuyen kho");
   }
 });
 
@@ -519,7 +633,7 @@ router.get("/transfers/pending", async (req, res) => {
     const pool = await getPool();
     const rq = pool.request();
     let where = `WHERE c.TrangThai = N'DANG_CHUYEN'`;
-    if (!u.isAdmin) {
+    if (!u.ghiHaiKhoMm) {
       if (u.khoGhi === "RMA") {
         where += ` AND c.MaKhoDich = N'RMA'`;
       } else if (u.khoGhi === "UPK") {
@@ -572,7 +686,7 @@ router.post("/transfers", async (req, res) => {
   let nguon = String(maKhoNguon || "").toUpperCase();
   let dich = String(maKhoDich || "").toUpperCase();
 
-  if (!u.isAdmin) {
+  if (!u.ghiHaiKhoMm) {
     nguon = u.khoGhi;
     if (!nguon) return res.status(403).json({ error: "Khong xac dinh kho nguon" });
     dich = nguon === "UPK" ? "RMA" : "UPK";
@@ -672,7 +786,7 @@ router.post("/transfers/:id/confirm", async (req, res) => {
     if (!row) return res.status(404).json({ error: "Khong tim thay chuyen" });
     if (row.TrangThai !== "DANG_CHUYEN") return res.status(400).json({ error: "Chuyen khong con cho nhan" });
 
-    if (!u.isAdmin) {
+    if (!u.ghiHaiKhoMm) {
       const deny = assertWriteKho(req, row.MaKhoDich);
       if (deny) return res.status(deny.status).json({ error: deny.error });
       if (u.khoGhi !== row.MaKhoDich) {

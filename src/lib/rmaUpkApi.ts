@@ -64,6 +64,8 @@ export interface RmaUpkMe {
   quyen: string;
   khoGhi: "UPK" | "RMA" | null;
   isAdmin: boolean;
+  /** Admin hoặc nhân viên MM — ghi được cả UPK và RMA (thiếu khi API cũ → coi như isAdmin) */
+  ghiHaiKhoMm?: boolean;
   coTheGhiUPK: boolean;
   coTheGhiRMA: boolean;
 }
@@ -72,6 +74,12 @@ export interface RmaUpkTonRow {
   MaLinhKien: string;
   MaKho: string;
   SoLuongTon: number;
+}
+
+/** GET /api/rma-upk/stock-sku-counts — số mã có tồn > 0 vs = 0 */
+export interface RmaUpkStockSkuCounts {
+  coTon: number;
+  hetHang: number;
 }
 
 export interface RmaUpkTransferLine {
@@ -120,6 +128,21 @@ export interface RmaUpkTransferPending {
   GhiChu: string | null;
   TenNguoiTao: string | null;
   TaiKhoanNguoiTao: string | null;
+  chiTiet: RmaUpkTransferLine[];
+}
+
+/** GET /api/rma-upk/transfers/history — phiếu đã hoàn thành */
+export interface RmaUpkTransferHistoryRow {
+  MaChuyen: number;
+  MaKhoNguon: string;
+  MaKhoDich: string;
+  NgayTao: string;
+  NgayXacNhan: string | null;
+  GhiChu: string | null;
+  TaiKhoanNguoiTao: string | null;
+  HoTenNguoiTao: string | null;
+  TaiKhoanXacNhan: string | null;
+  HoTenNguoiXacNhan: string | null;
   chiTiet: RmaUpkTransferLine[];
 }
 

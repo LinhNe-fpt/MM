@@ -122,7 +122,7 @@ export default function TrangRmaUpkGiaoDich() {
     };
   }, [maLinhKien, maKho]);
 
-  const coTheGhi = me?.isAdmin || me?.khoGhi === maKho;
+  const coTheGhi = maKho === "UPK" ? !!me?.coTheGhiUPK : !!me?.coTheGhiRMA;
   const locale = ngonNgu === "ko" ? "ko-KR" : "vi-VN";
   const doiTacPhieu =
     maKho === "UPK"
@@ -190,7 +190,7 @@ export default function TrangRmaUpkGiaoDich() {
           <CardTitle className="text-base">{t("rmaUpk.tx_card_title")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {me?.isAdmin ? (
+          {me?.ghiHaiKhoMm ?? me?.isAdmin ? (
             <p className="text-sm text-muted-foreground">
               {t("rmaUpk.tx_wh_label")}: <strong>{maKho}</strong>
             </p>

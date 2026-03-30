@@ -124,7 +124,7 @@ function TuyenCongKhai({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Luồng `/upk` — admin hoặc vai trò upk */
+/** Luồng `/upk` — admin, nhân viên MM, hoặc vai trò upk */
 function TuyenUpk({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
@@ -139,7 +139,7 @@ function TuyenUpk({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Luồng `/rma` — admin hoặc vai trò rma */
+/** Luồng `/rma` — admin, nhân viên MM, hoặc vai trò rma */
 function TuyenRma({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;

@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Pencil, Trash2, Loader2, ShieldCheck, Eye, Users, UserCog, Camera, Stethoscope } from "lucide-react";
 import { Navigate } from "react-router-dom";
+import { AvatarCropDialog } from "@/components/users/AvatarCropDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -52,25 +53,6 @@ function avatarColor(name: string): [string, string] {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
-
-/** Resize ảnh về max 256×256 → base64 JPEG */
-function resizeToBase64(file: File, maxSize = 256): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.85));
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -217,6 +199,15 @@ function UserFormDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialAvatar ?? null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropUrl, setCropUrl] = useState<string | null>(null);
+
+  function revokeCropUrl() {
+    if (cropUrl) {
+      URL.revokeObjectURL(cropUrl);
+      setCropUrl(null);
+    }
+  }
 
   useEffect(() => {
     if (open) { setForm(initial); setError(null); setAvatarPreview(initialAvatar ?? null); }
@@ -224,10 +215,13 @@ function UserFormDialog({
 
   function set(field: keyof UserForm, val: string) { setForm((f) => ({ ...f, [field]: val })); }
 
-  async function handleAvatarFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleAvatarFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    try { setAvatarPreview(await resizeToBase64(file)); } catch { /* ignore */ }
+    revokeCropUrl();
+    const url = URL.createObjectURL(file);
+    setCropUrl(url);
+    setCropOpen(true);
     e.target.value = "";
   }
 
@@ -273,6 +267,20 @@ function UserFormDialog({
   const [fg, bg] = avatarColor(previewName);
 
   return (
+    <>
+    <AvatarCropDialog
+      open={cropOpen}
+      imageUrl={cropUrl}
+      onOpenChange={(o) => {
+        if (!o) revokeCropUrl();
+        setCropOpen(o);
+      }}
+      onCropped={(b64) => {
+        setAvatarPreview(b64);
+        revokeCropUrl();
+        setCropOpen(false);
+      }}
+    />
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
@@ -375,6 +383,7 @@ function UserFormDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { User, LogOut, Sun, Moon, Globe, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/NguCanhXacThuc";
@@ -8,25 +8,7 @@ import { nhanQuyenTuMa } from "@/lib/quyenLabels";
 import { useTheme } from "@/contexts/NguCanhGiaoDien";
 import { apiPut } from "@/api/client";
 import type { NgonNgu } from "@/i18n/phienDich";
-
-/** Resize ảnh về max 256x256 → base64 JPEG */
-async function resizeToBase64(file: File, maxSize = 256): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.85));
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
+import { AvatarCropDialog } from "@/components/users/AvatarCropDialog";
 
 export default function TrangCaNhan() {
   const { user, signOut, capNhatAnhDaiDien } = useAuth();
@@ -35,6 +17,15 @@ export default function TrangCaNhan() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropUrl, setCropUrl] = useState<string | null>(null);
+
+  const revokeCropUrl = useCallback(() => {
+    setCropUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
 
   const meta = user?.user_metadata as { fromDb?: boolean; hoTen?: string; quyen?: string; anhDaiDien?: string | null } | undefined;
   const userId = user?.id;
@@ -43,20 +34,29 @@ export default function TrangCaNhan() {
   const laYTe = String(quyen).toLowerCase() === "y_te";
   const avatarSrc = meta?.anhDaiDien ?? null;
 
-  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !userId) return;
+    setAvatarErr(null);
+    revokeCropUrl();
+    setCropUrl(URL.createObjectURL(file));
+    setCropOpen(true);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function handleAvatarCropped(b64: string) {
+    if (!userId) return;
     setUploading(true);
     setAvatarErr(null);
     try {
-      const b64 = await resizeToBase64(file);
       await apiPut(`/api/users/${userId}/avatar`, { anhDaiDien: b64 });
       capNhatAnhDaiDien(b64);
     } catch (err) {
       setAvatarErr(err instanceof Error ? err.message : "Lỗi cập nhật ảnh");
     } finally {
       setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      revokeCropUrl();
+      setCropOpen(false);
     }
   }
 
@@ -75,6 +75,15 @@ export default function TrangCaNhan() {
 
   return (
     <div className="relative mx-auto max-w-md min-h-[min(480px,60vh)]">
+      <AvatarCropDialog
+        open={cropOpen}
+        imageUrl={cropUrl}
+        onOpenChange={(o) => {
+          if (!o) revokeCropUrl();
+          setCropOpen(o);
+        }}
+        onCropped={handleAvatarCropped}
+      />
       {laYTe ? (
         <div
           className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center overflow-hidden"
@@ -109,7 +118,7 @@ export default function TrangCaNhan() {
           >
             <Camera className="w-6 h-6 text-white" />
           </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarPick} />
           {uploading && (
             <div className="absolute inset-0 rounded-full bg-background/60 flex items-center justify-center">
               <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import {
   rmaUpkGet,
   rmaUpkPost,
@@ -38,6 +39,7 @@ export default function TrangRmaUpkTonKho() {
   const [dangImportRma, setDangImportRma] = useState(false);
   const [dangPreviewRma, setDangPreviewRma] = useState(false);
   const [ketQuaImportRma, setKetQuaImportRma] = useState<RmaUpkImportBaocaoResult | null>(null);
+  const [timKiemMa, setTimKiemMa] = useState("");
 
   const load = useCallback(async () => {
     setTai(true);
@@ -59,12 +61,18 @@ export default function TrangRmaUpkTonKho() {
     load();
   }, [load]);
 
-  const { page, setPage, resetPage, totalPages, slice: dongTrang } = usePhanTrang(rows);
+  const rowsDaLoc = useMemo(() => {
+    const q = timKiemMa.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => String(r?.MaLinhKien ?? "").toLowerCase().includes(q));
+  }, [rows, timKiemMa]);
+
+  const { page, setPage, resetPage, totalPages, slice: dongTrang } = usePhanTrang(rowsDaLoc);
   useEffect(() => {
     resetPage();
-  }, [scope, resetPage]);
+  }, [scope, timKiemMa, resetPage]);
 
-  const coTheSuaKho = (k: "UPK" | "RMA") => (me?.isAdmin ? true : me?.khoGhi === k);
+  const coTheSuaKho = (k: "UPK" | "RMA") => (k === "UPK" ? !!me?.coTheGhiUPK : !!me?.coTheGhiRMA);
 
   async function importBaoCaoUpk() {
     if (!fileBaoCaoUpk) {
@@ -264,6 +272,23 @@ export default function TrangRmaUpkTonKho() {
       )}
 
       <div className="flex flex-col overflow-hidden rounded-lg border border-border">
+        <div className="flex flex-col gap-2 border-b border-border bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <label className="text-sm font-medium shrink-0" htmlFor="rma-upk-stock-search">
+            {t("rmaUpk.stock_search_label")}
+          </label>
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden />
+            <Input
+              id="rma-upk-stock-search"
+              type="search"
+              autoComplete="off"
+              className="pl-9"
+              placeholder={t("rmaUpk.stock_search_ph")}
+              value={timKiemMa}
+              onChange={(e) => setTimKiemMa(e.target.value)}
+            />
+          </div>
+        </div>
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -281,7 +306,7 @@ export default function TrangRmaUpkTonKho() {
                   {t("rmaUpk.stock_loading")}
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : rowsDaLoc.length === 0 ? (
               <tr>
                 <td colSpan={4} className="p-8 text-center text-muted-foreground">
                   {t("rmaUpk.stock_empty")}
@@ -322,11 +347,11 @@ export default function TrangRmaUpkTonKho() {
           </tbody>
         </table>
         </div>
-        {!tai && rows.length > 0 ? (
+        {!tai && rowsDaLoc.length > 0 ? (
           <PhanTrang
             trangHienTai={page}
             tongSoTrang={totalPages}
-            tongSoMuc={rows.length}
+            tongSoMuc={rowsDaLoc.length}
             onChuyenTrang={setPage}
             nhanTomTat={t("comp.pagination_rows")}
           />

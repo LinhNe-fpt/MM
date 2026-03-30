@@ -32,8 +32,8 @@ export function ThanhBenKhoPhu() {
   const { signOut, user } = useAuth();
   const { basePath, scope } = useKhoPhu();
   const quyen = String((user?.user_metadata as { quyen?: string } | undefined)?.quyen || "").toLowerCase();
-  const coVeMM = quyen === "admin";
-  const adminHaiKho = quyen === "admin";
+  const coVeMM = quyen === "admin" || quyen === "nhan_vien";
+  const adminHaiKho = quyen === "admin" || quyen === "nhan_vien";
 
   const NAV = useMemo(
     () =>

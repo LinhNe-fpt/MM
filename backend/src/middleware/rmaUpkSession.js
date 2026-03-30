@@ -1,6 +1,6 @@
 /**
  * Xác thực phiên đăng nhập cho module RMA/UPK (header X-Ma-Phien).
- * Gắn req.rmaUpk: { maNguoiDung, taiKhoan, hoTen, quyen, khoGhi, isAdmin }
+ * Gắn req.rmaUpk: { maNguoiDung, taiKhoan, hoTen, quyen, khoGhi, isAdmin, ghiHaiKhoMm }
  */
 const { getPool } = require("../db");
 const sql = require("mssql");
@@ -16,7 +16,13 @@ function khoGhiTuQuyen(quyen) {
 
 function laQuyenMoRmaUpk(quyen) {
   const q = String(quyen || "").trim().toLowerCase();
-  return q === "admin" || q === "upk" || q === "rma";
+  return q === "admin" || q === "nhan_vien" || q === "upk" || q === "rma";
+}
+
+/** Ghi được cả UPK và RMA (admin hoặc nhân viên kho MM). */
+function laQuyenGhiHaiKhoMm(quyen) {
+  const q = String(quyen || "").trim().toLowerCase();
+  return q === "admin" || q === "nhan_vien";
 }
 
 async function requireRmaUpkSession(req, res, next) {
@@ -41,13 +47,15 @@ async function requireRmaUpkSession(req, res, next) {
     if (!laQuyenMoRmaUpk(quyen)) {
       return res.status(403).json({ error: "Tai khoan khong co quyen module RMA/UPK" });
     }
+    const qLower = String(quyen || "").trim().toLowerCase();
     req.rmaUpk = {
       maNguoiDung: row.MaNguoiDung,
       taiKhoan: row.TaiKhoan,
       hoTen: row.HoTen,
       quyen,
       khoGhi: khoGhiTuQuyen(quyen),
-      isAdmin: String(quyen || "").trim().toLowerCase() === "admin",
+      isAdmin: qLower === "admin",
+      ghiHaiKhoMm: laQuyenGhiHaiKhoMm(quyen),
     };
     next();
   } catch (err) {
@@ -58,12 +66,18 @@ async function requireRmaUpkSession(req, res, next) {
 
 /** Trả về { status, error } nếu không được ghi kho maKho */
 function assertWriteKho(req, maKho) {
-  const { khoGhi, isAdmin } = req.rmaUpk;
+  const { khoGhi, isAdmin, ghiHaiKhoMm } = req.rmaUpk;
   const k = String(maKho || "").toUpperCase();
   if (k !== "UPK" && k !== "RMA") return { status: 400, error: "MaKho khong hop le" };
-  if (isAdmin) return null;
+  if (isAdmin || ghiHaiKhoMm) return null;
   if (!khoGhi || khoGhi !== k) return { status: 403, error: "Chi duoc ghi kho cua nhom minh" };
   return null;
 }
 
-module.exports = { requireRmaUpkSession, assertWriteKho, khoGhiTuQuyen, laQuyenMoRmaUpk };
+module.exports = {
+  requireRmaUpkSession,
+  assertWriteKho,
+  khoGhiTuQuyen,
+  laQuyenMoRmaUpk,
+  laQuyenGhiHaiKhoMm,
+};
