@@ -6,7 +6,7 @@ import { ThanhCaTrucMobile } from "@/components/shift/ThanhCaTruc";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
 import { useTheme } from "@/contexts/NguCanhGiaoDien";
 import { useAuth } from "@/contexts/NguCanhXacThuc";
-import { APP_LOGO_URL, Y_TE_LOGO_URL } from "@/lib/app-icon";
+import { APP_LOGO_URL, SIDEBAR_BRAND_LOGO_URL, Y_TE_LOGO_URL } from "@/lib/app-icon";
 
 interface ErrorBoundaryProps { children: ReactNode; inline?: boolean; }
 interface ErrorBoundaryState { hasError: boolean; }
@@ -93,7 +93,7 @@ export function BoCucUngDung({ children }: PropsBoCucUngDung) {
       <div className="flex-1 flex flex-col min-h-screen">
         <div className="md:hidden flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-card">
           <div className="flex items-center gap-2 min-w-0">
-            <img src={APP_LOGO_URL} alt="EMS Warehouse" className="h-12 w-12 object-contain shrink-0" />
+            <img src={SIDEBAR_BRAND_LOGO_URL} alt="EMS Warehouse" className="h-12 w-12 object-contain shrink-0" />
             <p className="text-xs font-semibold text-foreground truncate">EMS WAREHOUSE</p>
           </div>
           <div className="flex rounded-md border border-border overflow-hidden">

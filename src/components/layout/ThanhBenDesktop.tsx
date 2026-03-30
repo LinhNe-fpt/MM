@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { LayoutGrid, Map, ArrowLeftRight, Package, Users, User, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, LogOut, CalendarClock, Tag, Layers, Boxes, Factory, BadgeCheck, ClipboardList } from "lucide-react";
-import { APP_LOGO_URL, MRO_LOGO_URL, Y_TE_LOGO_URL } from "@/lib/app-icon";
+import { LayoutGrid, Map, ArrowLeftRight, Package, Users, User, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, LogOut, CalendarClock, Tag, Layers, Factory, BadgeCheck, ClipboardList } from "lucide-react";
+import { APP_LOGO_URL, SIDEBAR_BRAND_LOGO_URL, MRO_LOGO_URL, Y_TE_LOGO_URL } from "@/lib/app-icon";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
 import { useTheme } from "@/contexts/NguCanhGiaoDien";
 import { useAuth } from "@/contexts/NguCanhXacThuc";
@@ -59,7 +59,7 @@ export function ThanhBenDesktop() {
       style={{ transitionDuration: "var(--snap-duration)", transitionTimingFunction: "var(--snap-curve)" }}
     >
       <div className={`border-b border-border ${thuGon ? "h-16 px-3" : "h-20 px-4"} flex items-center gap-3`}>
-        <img src={APP_LOGO_URL} alt="EMS Warehouse" className={`${thuGon ? "h-[3.3rem] w-[3.3rem]" : "h-[4.2rem] w-[4.2rem]"} shrink-0 object-contain`} />
+        <img src={SIDEBAR_BRAND_LOGO_URL} alt="EMS Warehouse" className={`${thuGon ? "h-[3.3rem] w-[3.3rem]" : "h-[4.2rem] w-[4.2rem]"} shrink-0 object-contain`} />
         {!thuGon && (
           <div className="min-w-0">
             <p className="font-bold text-base text-foreground tracking-tight leading-5 truncate">IMS WAREHOUSE</p>
@@ -84,7 +84,7 @@ export function ThanhBenDesktop() {
                     style={{ transitionDuration: "var(--snap-duration)" }}
                     aria-label={t("nav.mm_section")}
                   >
-                    <Boxes className="w-4 h-4 shrink-0" aria-hidden />
+                    <img src={APP_LOGO_URL} alt="" className="h-8 w-8 shrink-0 object-contain" width={32} height={32} decoding="async" />
                   </button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
@@ -119,7 +119,7 @@ export function ThanhBenDesktop() {
               )}
               style={{ transitionDuration: "var(--snap-duration)" }}
             >
-              <Boxes className="w-4 h-4 shrink-0" aria-hidden />
+              <img src={APP_LOGO_URL} alt="" className="h-9 w-9 shrink-0 object-contain" width={36} height={36} decoding="async" />
               <span className="text-sm font-medium truncate flex-1">{t("nav.mm_section")}</span>
               <ChevronDown
                 className={cn("w-4 h-4 shrink-0 transition-transform duration-200", mmMo && "rotate-180")}

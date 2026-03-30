@@ -7,8 +7,11 @@ function urlPublic(file: string): string {
   return `${base}/${file}`;
 }
 
-/** Logo IMS toàn hệ (sidebar chính, watermark). */
-export const APP_LOGO_URL = urlPublic("yousung-vina-logo.png");
+/** Logo header sidebar + chữ IMS WAREHOUSE (giữ bản Yousung Vina). */
+export const SIDEBAR_BRAND_LOGO_URL = urlPublic("yousung-vina-logo.png");
+
+/** Logo YS MM — watermark, đăng nhập, in phiếu, favicon. */
+export const APP_LOGO_URL = urlPublic("logo-mm.png");
 
 /** Logo module Phòng Y tế (/yte) — Hội Chữ thập đỏ / Yousung Vina. */
 export const Y_TE_LOGO_URL = urlPublic("logo-y-te.png");

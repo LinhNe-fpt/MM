@@ -14,7 +14,7 @@ import {
   Factory,
   ArrowRightLeft,
 } from "lucide-react";
-import { APP_LOGO_URL } from "@/lib/app-icon";
+import { SIDEBAR_BRAND_LOGO_URL } from "@/lib/app-icon";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
 import { useTheme } from "@/contexts/NguCanhGiaoDien";
 import { useAuth } from "@/contexts/NguCanhXacThuc";
@@ -150,7 +150,7 @@ export function ThanhBenKhoPhu() {
                     className="flex h-10 items-center justify-center px-0 text-muted-foreground btn-mechanical hover:bg-sidebar-accent hover:text-foreground"
                     aria-label={t("rmaUpk.back_mm")}
                   >
-                    <img src={APP_LOGO_URL} alt="" className="h-[2.1rem] w-[2.1rem] object-contain opacity-80" />
+                    <img src={SIDEBAR_BRAND_LOGO_URL} alt="" className="h-[2.1rem] w-[2.1rem] object-contain opacity-80" />
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent side="right">{t("rmaUpk.back_mm_aria")}</TooltipContent>
@@ -160,7 +160,7 @@ export function ThanhBenKhoPhu() {
                 to="/"
                 className="flex h-10 items-center gap-3 px-4 text-sm text-muted-foreground btn-mechanical hover:bg-sidebar-accent hover:text-foreground"
               >
-                <img src={APP_LOGO_URL} alt="" className="h-[2.4rem] w-[2.4rem] shrink-0 object-contain opacity-90" />
+                <img src={SIDEBAR_BRAND_LOGO_URL} alt="" className="h-[2.4rem] w-[2.4rem] shrink-0 object-contain opacity-90" />
                 <span className="truncate font-medium">{t("rmaUpk.back_mm")}</span>
               </Link>
             )}
