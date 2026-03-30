@@ -12,9 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Ảnh tạo cục bộ (thường không cần trong repo)
-Gemini_Generated_Image*.png
-
 # Env (không commit secret)
 .env
 .env.*
