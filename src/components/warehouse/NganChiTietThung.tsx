@@ -433,24 +433,24 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
     <>
     <Drawer open={mo} onOpenChange={(v) => !v && dong()}>
       <DrawerContent
-        className="bg-gradient-to-b from-card to-background border-border"
+        className="bg-gradient-to-b from-card to-background border-border lg:max-w-6xl xl:max-w-7xl lg:mx-auto lg:left-1/2 lg:-translate-x-1/2 lg:right-auto lg:w-[calc(100%-2rem)]"
         style={{ animation: mo ? "slideUp 0.2s ease-out" : "slideDown 0.2s ease-in" }}
       >
         {/* Header */}
-        <DrawerHeader className="border-b border-border pb-4 px-4">
-          <div className="flex items-center justify-between gap-2">
+        <DrawerHeader className="border-b border-border pb-4 px-4 sm:px-6 lg:pb-5 lg:px-8">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <DrawerTitle className="font-mono text-base font-bold flex items-center gap-2">
+              <DrawerTitle className="font-mono text-base sm:text-lg lg:text-xl font-bold flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-primary">{t("warehouse.rack_prefix")} {thung.row}</span>
                 <span className="text-muted-foreground">/</span>
                 <span>{t("bin.bin_label")} {thung.label}</span>
               </DrawerTitle>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1.5 lg:text-base">
                 {thung.components.length} {t("bin.components_count")}
               </p>
             </div>
             {thung.components.length > 0 && (
-              <span className={`label-industrial px-2 py-1 rounded-md font-semibold text-xs ${nhanTrangThai[thung.status].class} bg-opacity-10`}>
+              <span className={`label-industrial px-2.5 py-1.5 rounded-md font-semibold text-xs sm:text-sm lg:text-base shrink-0 ${nhanTrangThai[thung.status].class} bg-opacity-10`}>
                 {nhanTrangThai[thung.status].text}
               </span>
             )}
@@ -458,15 +458,15 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
         </DrawerHeader>
 
         {/* Content */}
-        <div className="p-4 space-y-3 max-h-[calc(75vh-120px)] overflow-y-auto">
+        <div className="p-4 sm:p-5 lg:p-6 space-y-3 lg:space-y-4 max-h-[calc(75vh-120px)] lg:max-h-[calc(82vh-140px)] overflow-y-auto">
           {thung.components.length === 0 ? (
             <motion.div
-              className="flex flex-col items-center py-12 text-muted-foreground"
+              className="flex flex-col items-center py-12 lg:py-16 text-muted-foreground"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <Package className="w-12 h-12 mb-3 opacity-30" />
-              <p className="text-sm font-medium">{t("bin.empty_bin")}</p>
+              <Package className="w-12 h-12 lg:w-16 lg:h-16 mb-3 opacity-30" />
+              <p className="text-sm lg:text-base font-medium">{t("bin.empty_bin")}</p>
             </motion.div>
           ) : (
             thung.components.map((lk, idx) => {
@@ -485,35 +485,35 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
                   transition={{ delay: idx * 0.03 }}
                 >
                   {/* Compact row */}
-                  <div className="flex items-start gap-2 px-2.5 py-2">
+                  <div className="flex items-start gap-2.5 sm:gap-3 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-5 lg:py-4">
                     {/* Status dot */}
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: stockColor }} />
+                    <span className="w-2 h-2 lg:w-2.5 lg:h-2.5 rounded-full shrink-0 mt-2 lg:mt-2.5" style={{ backgroundColor: stockColor }} />
 
                     {/* Code + Name + Stock detail */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-xs font-semibold text-primary">{lk.partNumber}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-sm sm:text-base lg:text-lg font-semibold text-primary">{lk.partNumber}</span>
                         {(lk as any).viTriText && (
-                          <span className="text-[9px] font-mono font-bold px-1 py-px bg-orange-50 border border-orange-200 rounded text-orange-600">
+                          <span className="text-[10px] sm:text-xs lg:text-sm font-mono font-bold px-1.5 py-0.5 bg-orange-50 border border-orange-200 rounded text-orange-600">
                             📍 {(lk as any).viTriText}
                           </span>
                         )}
                         {(lk as any).lech != null && (
-                          <span className={`text-[9px] font-bold px-1 py-px rounded ${(lk as any).lech > 0 ? "bg-green-50 border border-green-200 text-green-600" : "bg-red-50 border border-red-200 text-red-600"}`}>
+                          <span className={`text-[10px] sm:text-xs lg:text-sm font-bold px-1.5 py-0.5 rounded ${(lk as any).lech > 0 ? "bg-green-50 border border-green-200 text-green-600" : "bg-red-50 border border-red-200 text-red-600"}`}>
                             {(lk as any).lech > 0 ? "+" : ""}{(lk as any).lech} lệch
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">{lk.name}</p>
+                      <p className="text-xs sm:text-sm lg:text-base text-muted-foreground truncate mt-1">{lk.name}</p>
 
                       {/* Ca ngày / Ca đêm / Thực tế */}
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
                         {(lk as any).tonCuoiCaNgay != null && (
-                          <span className="text-[9px] bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 text-violet-700 font-mono font-semibold">
+                          <span className="text-[10px] sm:text-xs lg:text-sm bg-violet-50 border border-violet-200 rounded-md px-2 py-1 text-violet-700 font-mono font-semibold">
                             {t("bin.shift_day_short")}: {Math.round((lk as any).tonCuoiCaNgay).toLocaleString()}
                           </span>
                         )}
-                        <span className={`text-[9px] rounded px-1.5 py-0.5 font-mono font-semibold border ${
+                        <span className={`text-[10px] sm:text-xs lg:text-sm rounded-md px-2 py-1 font-mono font-semibold border ${
                           lk.quantity <= 0 ? "bg-muted/50 border-border/40 text-muted-foreground"
                           : lk.quantity < 10 ? "bg-amber-50 border-amber-200 text-amber-700"
                           : "bg-emerald-50 border-emerald-200 text-emerald-700"
@@ -521,7 +521,7 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
                           {t("bin.shift_night_short")}: {lk.quantity.toLocaleString()}
                         </span>
                         {(lk as any).tonThucTe != null && (
-                          <span className={`text-[9px] rounded px-1.5 py-0.5 font-mono font-semibold border ${
+                          <span className={`text-[10px] sm:text-xs lg:text-sm rounded-md px-2 py-1 font-mono font-semibold border ${
                             (lk as any).lech != null ? "bg-red-50 border-red-200 text-red-600" : "bg-sky-50 border-sky-200 text-sky-700"
                           }`}>
                             {t("bin.actual_short")}: {Math.round((lk as any).tonThucTe).toLocaleString()}
@@ -530,8 +530,8 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
                       </div>
 
                       {/* Progress bar */}
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex-1 h-1.5 lg:h-2 bg-muted rounded-full overflow-hidden">
                           <motion.div
                             className="h-full rounded-full"
                             initial={{ width: 0 }}
@@ -541,7 +541,7 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
                           />
                         </div>
                         {minStock > 0 && (
-                          <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">
+                          <span className="text-[10px] sm:text-xs text-muted-foreground tabular-nums shrink-0">
                             min {minStock.toLocaleString()}
                           </span>
                         )}
@@ -552,10 +552,10 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
                     <button
                       type="button"
                       onClick={() => toggleBom(lk.partNumber)}
-                      className="shrink-0 p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
+                      className="shrink-0 p-1.5 lg:p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
                       title={bomOpen ? t("bin.bom_collapse") : t("bin.bom_expand")}
                     >
-                      {bomOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      {bomOpen ? <ChevronUp className="w-4 h-4 lg:w-5 lg:h-5" /> : <ChevronDown className="w-4 h-4 lg:w-5 lg:h-5" />}
                     </button>
                   </div>
 
@@ -568,7 +568,7 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.18, ease: "easeOut" }}
                         style={{ overflow: "hidden" }}
-                        className="border-t border-border/40 bg-muted/20 px-2.5 pb-2"
+                        className="border-t border-border/40 bg-muted/20 px-3 sm:px-4 lg:px-5 pb-3"
                       >
                         <BomSection partNumber={lk.partNumber} />
                       </motion.div>
@@ -582,27 +582,27 @@ export function NganChiTietThung({ thung, mo, dong, sauKhiKiemKe }: PropsNganChi
 
         {/* Footer Actions */}
         {thung.components.length > 0 && (
-          <div className="border-t border-border p-4 flex gap-2">
+          <div className="border-t border-border p-4 sm:p-5 lg:p-6 flex gap-2 sm:gap-3">
             <motion.button
               type="button"
-              className="flex-1 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-all duration-150 disabled:opacity-60"
+              className="flex-1 px-4 py-3 sm:py-3.5 lg:py-4 rounded-lg bg-primary text-primary-foreground font-medium text-sm sm:text-base lg:text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-all duration-150 disabled:opacity-60"
               whileTap={{ scale: 0.95 }}
               transition={{ duration: 0.15, ease: "easeOut" }}
               disabled={dangInQr}
               onClick={() => void inQrThung()}
             >
-              {dangInQr ? <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden /> : <QrCode size={18} aria-hidden />}
+              {dangInQr ? <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 animate-spin" aria-hidden /> : <QrCode className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" aria-hidden />}
               {t("bin.print_qr")}
             </motion.button>
             <motion.button
               type="button"
-              className="flex-1 px-4 py-2.5 rounded-lg border-2 border-primary text-primary font-medium text-sm flex items-center justify-center gap-2 hover:bg-primary/5 transition-all duration-150"
+              className="flex-1 px-4 py-3 sm:py-3.5 lg:py-4 rounded-lg border-2 border-primary text-primary font-medium text-sm sm:text-base lg:text-lg flex items-center justify-center gap-2 hover:bg-primary/5 transition-all duration-150"
               whileTap={{ scale: 0.95 }}
               transition={{ duration: 0.15, ease: "easeOut" }}
               title={!coMaViTri ? t("bin.count_error_vitri") : undefined}
               onClick={() => setDialogKiemKe(true)}
             >
-              <Clipboard size={18} aria-hidden />
+              <Clipboard className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" aria-hidden />
               {t("bin.count_bin")}
             </motion.button>
           </div>

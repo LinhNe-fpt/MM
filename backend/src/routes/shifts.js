@@ -4,7 +4,7 @@
  * GET  /api/shifts/active      — ca đang active (nếu có)
  * POST /api/shifts/start       — bắt đầu ca (auto-close ca cũ nếu còn active)
  * POST /api/shifts/:id/end     — kết thúc ca
- * GET  /api/shifts             — lịch sử ca (phân trang)
+ * GET  /api/shifts             — lịch sử ca (phân trang; query: limit, offset, kieuCa, maNguoiDung)
  * GET  /api/shifts/:id/report  — báo cáo chi tiết 1 ca
  */
 const { Router } = require("express");
@@ -172,32 +172,84 @@ async function endShift(req, res) {
   }
 }
 
+/**
+ * Phân loại theo giờ bắt đầu ca (giờ máy chủ DB):
+ * - Ca ngày chính: 08:00–17:00
+ * - Tăng ca ca ngày: 17:00–20:00 (ngoài khung ca ngày → tính tăng ca của ca ngày)
+ * - Ca đêm chính: 20:00–06:00 (đêm + nửa đêm)
+ * - Tăng ca ca đêm: 06:00–08:00 (ngoài khung ca đêm → tính tăng ca của ca đêm)
+ */
+function dieuKienGioCa(kieu) {
+  const k = String(kieu || "").toLowerCase();
+  if (k === "day" || k === "ngay") {
+    return " AND DATEPART(HOUR, c.ThoiGianBatDau) >= 8 AND DATEPART(HOUR, c.ThoiGianBatDau) < 20 ";
+  }
+  if (k === "night" || k === "dem") {
+    return " AND (DATEPART(HOUR, c.ThoiGianBatDau) >= 20 OR DATEPART(HOUR, c.ThoiGianBatDau) < 8) ";
+  }
+  return "";
+}
+
+const SQL_LOAI_CA = `
+  CASE
+    WHEN DATEPART(HOUR, c.ThoiGianBatDau) >= 8 AND DATEPART(HOUR, c.ThoiGianBatDau) < 17 THEN 'day'
+    WHEN DATEPART(HOUR, c.ThoiGianBatDau) >= 17 AND DATEPART(HOUR, c.ThoiGianBatDau) < 20 THEN 'day_ot'
+    WHEN DATEPART(HOUR, c.ThoiGianBatDau) >= 6 AND DATEPART(HOUR, c.ThoiGianBatDau) < 8 THEN 'night_ot'
+    WHEN DATEPART(HOUR, c.ThoiGianBatDau) >= 20 OR DATEPART(HOUR, c.ThoiGianBatDau) < 6 THEN 'night'
+    ELSE 'gap'
+  END
+`;
+
 // ─── GET /api/shifts ─────────────────────────────────────────────────────────
 
 async function listShifts(req, res) {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const offset = parseInt(req.query.offset) || 0;
+    const timeWhere = dieuKienGioCa(req.query.kieuCa);
+    let maNguoiDungFilter = null;
+    const qNd = req.query.maNguoiDung;
+    if (qNd !== undefined && qNd !== null && String(qNd).trim() !== "") {
+      const n = parseInt(String(qNd), 10);
+      if (!Number.isNaN(n) && n > 0) maNguoiDungFilter = n;
+    }
+    const userWhere = maNguoiDungFilter ? " AND c.MaNguoiDung = @filterMaNguoiDung " : "";
+
     const pool = await getPool();
-    const result = await pool.request()
+    const rq = pool.request()
       .input("limit", sql.Int, limit)
-      .input("offset", sql.Int, offset)
-      .query(`
+      .input("offset", sql.Int, offset);
+    if (maNguoiDungFilter) rq.input("filterMaNguoiDung", sql.Int, maNguoiDungFilter);
+
+    const result = await rq.query(`
         SELECT c.MaCa, c.MaNguoiDung, c.ThoiGianBatDau, c.ThoiGianKetThuc, c.TrangThai, c.GhiChu,
                ISNULL(n.HoTen, n.TaiKhoan) AS TenNguoiDung,
+               ${SQL_LOAI_CA} AS LoaiCa,
                (SELECT COUNT(*) FROM PhieuKho p WHERE p.MaCa = c.MaCa) AS SoPhieu,
                (SELECT ISNULL(SUM(ct.SoLuong),0) FROM ChiTietPhieuKho ct JOIN PhieuKho p ON p.MaPhieu=ct.MaPhieu WHERE p.MaCa=c.MaCa AND p.LoaiGiaoDich='IN')  AS TongNhap,
                (SELECT ISNULL(SUM(ct.SoLuong),0) FROM ChiTietPhieuKho ct JOIN PhieuKho p ON p.MaPhieu=ct.MaPhieu WHERE p.MaCa=c.MaCa AND p.LoaiGiaoDich='OUT') AS TongXuat
         FROM CaLamViec c
         LEFT JOIN NguoiDung n ON n.MaNguoiDung = c.MaNguoiDung
+        WHERE 1=1 ${timeWhere} ${userWhere}
         ORDER BY c.ThoiGianBatDau DESC
         OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
       `);
-    const totalResult = await pool.request().query("SELECT COUNT(*) AS cnt FROM CaLamViec");
+
+    const rqCount = pool.request();
+    if (maNguoiDungFilter) rqCount.input("filterMaNguoiDung", sql.Int, maNguoiDungFilter);
+    const totalResult = await rqCount.query(`SELECT COUNT(*) AS cnt FROM CaLamViec c WHERE 1=1 ${timeWhere} ${userWhere}`);
     res.json({
       total: totalResult.recordset[0].cnt,
       items: result.recordset.map((r) => ({
         ...toShift(r),
+        loaiCa: (() => {
+          const v = String(r.LoaiCa ?? r.loaica ?? "").toLowerCase();
+          if (v === "day") return "day";
+          if (v === "day_ot") return "day_ot";
+          if (v === "night") return "night";
+          if (v === "night_ot") return "night_ot";
+          return "gap";
+        })(),
         soPhieu: r.SoPhieu,
         tongNhap: Number(r.TongNhap),
         tongXuat: Number(r.TongXuat),

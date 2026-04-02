@@ -3,6 +3,7 @@ const multer = require("multer");
 const sql = require("mssql");
 const { getPool } = require("../db");
 const { parseWorkbookKhsx } = require("../lib/khsxSheetParse");
+const { normalizeKhsxStatus, isKnownKhsxStatus, canTransitionKhsx } = require("../lib/khsxStatusFlow");
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
@@ -350,14 +351,33 @@ router.get("/plans", async (req, res) => {
 
 router.post("/:id/status", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const status = String(req.body?.status || "").trim().toUpperCase();
+  const status = normalizeKhsxStatus(req.body?.status);
   if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "MaKeHoach khong hop le" });
-  if (!["CHO_XUAT_VT", "DANG_XUAT", "SAN_SANG", "THIEU_VT", "DA_XONG"].includes(status)) {
+  if (!status || !isKnownKhsxStatus(status)) {
     return res.status(400).json({ error: "TrangThai khong hop le" });
   }
   try {
     const pool = await getPool();
-    await pool
+    const curRs = await pool.request().input("Id", sql.Int, id).query(`
+      SELECT TrangThai FROM dbo.KeHoachSanXuat WHERE MaKeHoach = @Id
+    `);
+    const row = curRs.recordset[0];
+    if (!row) return res.status(404).json({ error: "Khong tim thay ke hoach" });
+    const cur = normalizeKhsxStatus(row.TrangThai);
+    if (!cur || !isKnownKhsxStatus(cur)) {
+      return res.status(400).json({ error: "Trang thai hien tai trong DB khong hop le" });
+    }
+    if (cur === status) {
+      return res.json({ ok: true });
+    }
+    if (!canTransitionKhsx(cur, status)) {
+      return res.status(400).json({
+        error:
+          "Khong duoc chuyen trang thai nay. Chi duoc tien theo luong: Cho xuat -> Dang xuat -> (San sang hoac Thieu VT) -> Da xong; khong nhay coc, khong quay lai.",
+        code: "KHSX_BAD_TRANSITION",
+      });
+    }
+    const upd = await pool
       .request()
       .input("Id", sql.Int, id)
       .input("Status", sql.NVarChar(30), status)
@@ -366,6 +386,9 @@ router.post("/:id/status", async (req, res) => {
         SET TrangThai = @Status, NgayCapNhat = SYSUTCDATETIME()
         WHERE MaKeHoach = @Id
       `);
+    if (upd.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: "Khong tim thay ke hoach" });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/khsx/:id/status:", err.message || err);

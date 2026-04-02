@@ -1,5 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { layMaNguoiDungTuUser } from "@/lib/maNguoiDungUser";
+import { useCa } from "@/contexts/NguCanhCa";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -87,12 +89,49 @@ const Spinner = () => (
   </div>
 );
 
-/** Bảo vệ route: yêu cầu đăng nhập */
+/**
+ * Tài khoản đăng nhập qua DB phải có ca đang active của chính mình (GET /api/shifts/active khớp MaNguoiDung).
+ * Cho phép vào /shifts để bắt đầu ca hoặc xử lý xung đột.
+ */
+function TuyenBatBuocCa({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { caHienTai, dangTai } = useCa();
+  const location = useLocation();
+  const maNguoi = layMaNguoiDungTuUser(user);
+
+  if (maNguoi == null) return <>{children}</>;
+
+  if (dangTai) return <Spinner />;
+
+  const p = location.pathname.replace(/\/$/, "") || "/";
+  const pathNorm = p.startsWith("/") ? p : `/${p}`;
+  if (pathNorm === "/shifts" || pathNorm.startsWith("/shifts/")) { 
+    return <>{children}</>;
+  }
+  /** Cho phép vào hồ sơ để đăng xuất khi chưa vào ca */
+  if (pathNorm === "/profile") {
+    return <>{children}</>;
+  }
+
+  const trongCaCuaToi = caHienTai != null && caHienTai.maNguoiDung === maNguoi;
+  if (!trongCaCuaToi) {
+    return (
+      <Navigate
+        to="/shifts"
+        replace
+        state={{ requireShift: true, from: location.pathname }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
+/** Bảo vệ route: yêu cầu đăng nhập + bắt buộc vào ca (tài khoản DB) */
 function TuyenBaoVe({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/auth" replace />;
-  return <>{children}</>;
+  return <TuyenBatBuocCa>{children}</TuyenBatBuocCa>;
 }
 
 /** Bảo vệ route: yêu cầu đăng nhập + có một trong các quyền cho phép */

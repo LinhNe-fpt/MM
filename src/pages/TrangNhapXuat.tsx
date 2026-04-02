@@ -2,7 +2,17 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { PageListSkeleton } from "@/components/ui/page-list-skeleton";
 import { type GiaoDich, type LinhKien } from "@/data/duLieuMau";
 import { API_BASE, apiPost } from "@/api/client";
-import { ArrowDownRight, ArrowUpRight, CheckCircle, Loader2, Printer, Package, FileDown } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  CheckCircle,
+  Loader2,
+  Printer,
+  Package,
+  FileDown,
+  Trash2,
+} from "lucide-react";
 import { APP_LOGO_URL } from "@/lib/app-icon";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -22,9 +32,51 @@ import { motion, AnimatePresence } from "framer-motion";
 import { snappyAnimations } from "@/lib/animations";
 import { usePhanTrang } from "@/lib/usePhanTrang";
 import { PhanTrang } from "@/components/ui/PhanTrang";
+import { chuanHoaTenDanhMuc, gopDanhMucTrungLap } from "@/lib/chuanHoaDanhMucGiaoDich";
 
 type KieuTab = "IN" | "OUT";
 type BuocForm = "form" | "confirm" | "evidence";
+type KieuTomTatTx = "day" | "week" | "month";
+
+function ymdHomNayLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function ymdTruNgayLocal(soNgay: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - soNgay);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatHienThiKy(period: string, gran: KieuTomTatTx): string {
+  if (!period) return "—";
+  if (gran === "month" && period.length === 7 && /^\d{4}-\d{2}$/.test(period)) {
+    const [y, mo] = period.split("-");
+    return `${mo}/${y}`;
+  }
+  const head = period.slice(0, 10);
+  if ((gran === "day" || gran === "week") && /^\d{4}-\d{2}-\d{2}$/.test(head)) {
+    const [y, mo, da] = head.split("-");
+    return `${da}/${mo}/${y}`;
+  }
+  return period;
+}
+
+interface DongTomTatTx {
+  period: string;
+  type: "IN" | "OUT";
+  category: string;
+  /** Người ghi phiếu tại thời điểm đó (HoTen / TaiKhoan từ PhieuKho.MaNguoiDung) */
+  operator: string;
+  quantity: number;
+}
 
 function formatThoiGian() {
   const now = new Date();
@@ -82,12 +134,36 @@ function layNhanThungHienTai(lk: LinhKien | null | undefined, danhSachThung: str
 
 type CachChonViTri = "current" | "other";
 
+/** Một dòng trong phiếu (nhiều mã / nhiều dòng) */
+type DongPhieuTx = {
+  id: string;
+  lk: LinhKien;
+  soLuong: string;
+  model: string;
+  cachChonViTri: CachChonViTri;
+  thung: string;
+};
+
+function maViTriFromLk(lk: LinhKien | null | undefined): number | null {
+  if (!lk) return null;
+  const v = lk.maViTri;
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(String(v).trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export default function TrangNhapXuat() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { caHienTai } = useCa();
   const [tab, setTab] = useState<KieuTab>("IN");
   const [locDanhMuc, setLocDanhMuc] = useState<string>("all");
+  const [tomTatGranularity, setTomTatGranularity] = useState<KieuTomTatTx>("day");
+  const [tomTatTuNgay, setTomTatTuNgay] = useState(() => ymdTruNgayLocal(90));
+  const [tomTatDenNgay, setTomTatDenNgay] = useState(() => ymdHomNayLocal());
+  const [dongTomTat, setDongTomTat] = useState<DongTomTatTx[]>([]);
+  const [taiTomTat, setTaiTomTat] = useState(false);
+  const [loiTomTat, setLoiTomTat] = useState<string | null>(null);
   const [danhSachGiaoDich, setDanhSachGiaoDich] = useState<GiaoDich[]>([]);
   const [tatCaLinhKien, setTatCaLinhKien] = useState<LinhKien[]>([]);
   const [danhSachThung, setDanhSachThung] = useState<string[]>([]);
@@ -98,26 +174,18 @@ export default function TrangNhapXuat() {
   const [moForm, setMoForm] = useState(false);
   const [buoc, setBuoc] = useState<BuocForm>("form");
   const [danhMuc, setDanhMuc] = useState("");
-  const [maLinhKien, setMaLinhKien] = useState("");
-  const [model, setModel] = useState("");
-  const [soLuong, setSoLuong] = useState("");
-  const [thung, setThung] = useState("");
+  const [dongPhieu, setDongPhieu] = useState<DongPhieuTx[]>([]);
   const [fileMinhChung, setFileMinhChung] = useState<File | null>(null);
   const [dangGui, setDangGui] = useState(false);
   const [codeSearch, setCodeSearch] = useState("");
   const [codeSuggestions, setCodeSuggestions] = useState<LinhKien[]>([]);
   const [codeSuggestionsOpen, setCodeSuggestionsOpen] = useState(false);
   const [loadingCodeSuggestions, setLoadingCodeSuggestions] = useState(false);
-  const [selectedLinhKien, setSelectedLinhKien] = useState<LinhKien | null>(null);
   const [tiepTucNhapSauKhiLuu, setTiepTucNhapSauKhiLuu] = useState(false);
-  const [cachChonViTri, setCachChonViTri] = useState<CachChonViTri>("other");
   const [loiFormPhieu, setLoiFormPhieu] = useState<string | null>(null);
   const [loiGuiPhieu, setLoiGuiPhieu] = useState<string | null>(null);
   const codeInputRef = useRef<HTMLDivElement>(null);
   const danhMucSelectRef = useRef<HTMLSelectElement>(null);
-  const soLuongInputRef = useRef<HTMLInputElement>(null);
-  const thungSelectRef = useRef<HTMLSelectElement>(null);
-  const prevMaLinhKienChoViTri = useRef<string | null>(null);
   const operator = (user as { email?: string })?.email ?? "admin";
 
   useEffect(() => {
@@ -140,8 +208,10 @@ export default function TrangNhapXuat() {
           Array.isArray(arr) && arr.length > 0
             ? arr.map(i => typeof i === "string" ? { ten: i, moTa: "" } : { ten: String((i as { ten?: unknown }).ten ?? i), moTa: String((i as { moTa?: unknown }).moTa ?? "") })
             : [];
-        const inList  = toList(cats?.IN);
-        const outList = toList(cats?.OUT);
+        const inListRaw = toList(cats?.IN);
+        const outListRaw = toList(cats?.OUT);
+        const inList = inListRaw.length > 0 ? gopDanhMucTrungLap(inListRaw) : [];
+        const outList = outListRaw.length > 0 ? gopDanhMucTrungLap(outListRaw) : [];
         setDanhMucNhap(inList.length  > 0 ? inList  : [
           { ten: "UPK", moTa: "Unpack — Nhập từ nhà cung cấp" },
           { ten: "IQC", moTa: "Incoming QC" },
@@ -167,61 +237,112 @@ export default function TrangNhapXuat() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setTaiTomTat(true);
+    setLoiTomTat(null);
+    const q = new URLSearchParams({
+      granularity: tomTatGranularity,
+      type: tab,
+      from: tomTatTuNgay,
+      to: tomTatDenNgay,
+    });
+    fetch(`${API_BASE}/api/transactions/summary?${q}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: { rows?: DongTomTatTx[] }) => {
+        if (cancelled) return;
+        setDongTomTat(Array.isArray(data?.rows) ? data.rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDongTomTat([]);
+          setLoiTomTat(t("error.load_data"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTaiTomTat(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, tomTatGranularity, tomTatTuNgay, tomTatDenNgay, t]);
+
   const danhMucTheoTab = tab === "IN" ? danhMucNhap : danhMucXuat;
 
   const daLoc = useMemo(() => danhSachGiaoDich.filter((gd) => {
     if (gd.type !== tab) return false;
-    if (locDanhMuc !== "all" && gd.category !== locDanhMuc) return false;
+    if (locDanhMuc !== "all" && chuanHoaTenDanhMuc(gd.category) !== chuanHoaTenDanhMuc(locDanhMuc)) return false;
     return true;
   }), [danhSachGiaoDich, tab, locDanhMuc]);
+
+  const dongTomTatDaLoc = useMemo(() => {
+    if (locDanhMuc === "all") return dongTomTat;
+    return dongTomTat.filter(
+      (r) => chuanHoaTenDanhMuc(r.category || "") === chuanHoaTenDanhMuc(locDanhMuc)
+    );
+  }, [dongTomTat, locDanhMuc]);
 
   const { page, setPage, resetPage, totalPages, slice: danhSachHienThi } = usePhanTrang(daLoc);
   useEffect(() => {
     resetPage();
   }, [tab, locDanhMuc, resetPage]);
 
-  const linhKienChon = useMemo(
-    () => tatCaLinhKien.find((lk) => lk.partNumber === maLinhKien),
-    [maLinhKien, tatCaLinhKien]
+  const getBinLabelRow = useCallback(
+    (row: DongPhieuTx) => {
+      const nk = layNhanThungHienTai(row.lk, danhSachThung);
+      if (row.cachChonViTri === "current" && nk) return nk.trim();
+      return row.thung.trim();
+    },
+    [danhSachThung],
   );
-  const lkHienTai = selectedLinhKien ?? linhKienChon ?? null;
-  const maViTriTuLinhKien = useMemo(() => {
-    const v = lkHienTai?.maViTri;
-    if (v == null) return null;
-    const n = typeof v === "number" ? v : Number(String(v).trim());
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }, [lkHienTai]);
-  const nhanThungHienTai = useMemo(
-    () => layNhanThungHienTai(lkHienTai ?? undefined, danhSachThung),
-    [lkHienTai, danhSachThung]
+
+  const isDuViTriRow = useCallback(
+    (row: DongPhieuTx) => {
+      const bl = getBinLabelRow(row);
+      const maViTri = maViTriFromLk(row.lk);
+      return Boolean(bl) || (row.cachChonViTri === "current" && maViTri != null);
+    },
+    [getBinLabelRow],
   );
-  const binLabelHieuLuc = useMemo(() => {
-    if (cachChonViTri === "current" && nhanThungHienTai) return nhanThungHienTai.trim();
-    return thung.trim();
-  }, [cachChonViTri, nhanThungHienTai, thung]);
-  /** Đủ để gửi phiếu: có nhãn thùng hoặc vị trí hiện tại kèm MaViTri từ DB (TonKho + ViTriKho). */
-  const duViTriChoPhieu =
-    Boolean(binLabelHieuLuc.trim()) || (cachChonViTri === "current" && maViTriTuLinhKien != null);
 
-  useEffect(() => {
-    if (!moForm || buoc !== "form") return;
-    if (prevMaLinhKienChoViTri.current === maLinhKien) return;
-    prevMaLinhKienChoViTri.current = maLinhKien;
-    setThung("");
-    if (!maLinhKien.trim()) {
-      setCachChonViTri("other");
-      return;
-    }
-    const lk = selectedLinhKien ?? tatCaLinhKien.find((lk) => lk.partNumber === maLinhKien);
-    const cur = layNhanThungHienTai(lk, danhSachThung);
-    setCachChonViTri(cur ? "current" : "other");
-  }, [moForm, buoc, maLinhKien, selectedLinhKien, tatCaLinhKien, danhSachThung]);
+  const themDongTuLinhKien = useCallback(
+    (lk: LinhKien) => {
+      setDongPhieu((prev) => {
+        const idx = prev.findIndex((r) => r.lk.partNumber === lk.partNumber);
+        if (idx >= 0) {
+          const next = [...prev];
+          const cur = parseInt(next[idx].soLuong, 10) || 0;
+          next[idx] = { ...next[idx], soLuong: String(cur + 1) };
+          return next;
+        }
+        const nk = layNhanThungHienTai(lk, danhSachThung);
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        return [
+          ...prev,
+          {
+            id,
+            lk,
+            soLuong: "1",
+            model: lk.model ?? "",
+            cachChonViTri: nk ? "current" : "other",
+            thung: "",
+          },
+        ];
+      });
+      setCodeSearch("");
+      setCodeSuggestionsOpen(false);
+      setCodeSuggestions([]);
+    },
+    [danhSachThung],
+  );
 
-  const tenLinhKien = selectedLinhKien?.name ?? linhKienChon?.name ?? "";
-  const tonHienTai = selectedLinhKien?.quantity ?? linhKienChon?.quantity ?? 0;
-  const heSoQuyDoi = selectedLinhKien?.lossRate && selectedLinhKien.lossRate > 0 ? selectedLinhKien.lossRate : 1;
-  const soLuongNhap = Number(soLuong) || 0;
-  const soLuongQuyDoi = soLuongNhap * heSoQuyDoi;
+  const capNhatDong = useCallback((id: string, patch: Partial<Pick<DongPhieuTx, "soLuong" | "model" | "cachChonViTri" | "thung">>) => {
+    setDongPhieu((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }, []);
+
+  const xoaDong = useCallback((id: string) => {
+    setDongPhieu((prev) => prev.filter((r) => r.id !== id));
+  }, []);
 
   const categoryBadgeClass = (category: string, type: KieuTab) => {
     const key = (category || "").toUpperCase();
@@ -453,17 +574,11 @@ export default function TrangNhapXuat() {
     setTab(kieu);
     setBuoc("form");
     setDanhMuc(kieu === "IN" ? (danhMucNhap[0]?.ten ?? "") : (danhMucXuat[0]?.ten ?? ""));
-    prevMaLinhKienChoViTri.current = null;
-    setMaLinhKien("");
-    setModel("");
-    setSoLuong("");
-    setThung("");
-    setCachChonViTri("other");
+    setDongPhieu([]);
     setFileMinhChung(null);
     setCodeSearch("");
     setCodeSuggestions([]);
     setCodeSuggestionsOpen(false);
-    setSelectedLinhKien(null);
     setLoiFormPhieu(null);
     setLoiGuiPhieu(null);
     setMoForm(true);
@@ -480,17 +595,22 @@ export default function TrangNhapXuat() {
     setLoiFormPhieu(null);
     const errs: string[] = [];
     if (!danhMuc?.trim()) errs.push("Chọn danh mục nhập/xuất.");
-    if (!maLinhKien?.trim()) errs.push("Chọn hoặc nhập mã linh kiện.");
-    const soRaw = soLuong.trim();
-    if (!soRaw) errs.push("Nhập số lượng (số nguyên dương).");
-    else if (Number.isNaN(parseInt(soRaw, 10)) || parseInt(soRaw, 10) <= 0) errs.push("Số lượng phải là số nguyên lớn hơn 0.");
-    if (!duViTriChoPhieu) errs.push(t("tx.bin_required"));
+    if (dongPhieu.length === 0) errs.push(t("tx.lines_empty"));
+    for (const row of dongPhieu) {
+      const soRaw = row.soLuong.trim();
+      if (!soRaw || Number.isNaN(parseInt(soRaw, 10)) || parseInt(soRaw, 10) <= 0) {
+        errs.push(t("tx.line_qty_invalid", { code: String(row.lk.partNumber) }));
+        break;
+      }
+      if (!isDuViTriRow(row)) {
+        errs.push(t("tx.line_bin_invalid", { code: String(row.lk.partNumber) }));
+        break;
+      }
+    }
     if (errs.length > 0) {
       setLoiFormPhieu(errs.join(" "));
       if (!danhMuc?.trim()) danhMucSelectRef.current?.focus();
-      else if (!maLinhKien?.trim()) codeInputRef.current?.querySelector("input")?.focus();
-      else if (!soRaw || Number.isNaN(parseInt(soRaw, 10)) || parseInt(soRaw, 10) <= 0) soLuongInputRef.current?.focus();
-      else if (!duViTriChoPhieu) thungSelectRef.current?.focus();
+      else codeInputRef.current?.querySelector("input")?.focus();
       return;
     }
     setBuoc("confirm");
@@ -499,43 +619,43 @@ export default function TrangNhapXuat() {
   const sangMinhChung = () => setBuoc("evidence");
 
   const hoanTat = async () => {
-    const so = parseInt(soLuong, 10);
-    if (Number.isNaN(so) || so <= 0) return;
+    if (dongPhieu.length === 0) return;
     setLoiGuiPhieu(null);
     setDangGui(true);
     try {
-      const body: Record<string, unknown> = {
-        type: tab,
-        category: danhMuc,
-        partNumber: maLinhKien,
-        partName: tenLinhKien || maLinhKien,
-        quantity: so,
-        operator,
-      };
-      const bl = binLabelHieuLuc.trim();
-      if (bl) body.binLabel = bl;
-      if (cachChonViTri === "current" && maViTriTuLinhKien != null) body.maViTri = maViTriTuLinhKien;
-      if (!body.binLabel && body.maViTri == null) {
-        setLoiGuiPhieu(t("tx.bin_required"));
-        setDangGui(false);
-        return;
+      const moi: GiaoDich[] = [];
+      for (const row of dongPhieu) {
+        const so = parseInt(row.soLuong, 10);
+        if (Number.isNaN(so) || so <= 0) continue;
+        const body: Record<string, unknown> = {
+          type: tab,
+          category: danhMuc,
+          partNumber: row.lk.partNumber,
+          partName: row.lk.name || row.lk.partNumber,
+          quantity: so,
+          operator,
+        };
+        const bl = getBinLabelRow(row);
+        if (bl) body.binLabel = bl;
+        const maVt = maViTriFromLk(row.lk);
+        if (row.cachChonViTri === "current" && maVt != null) body.maViTri = maVt;
+        if (!body.binLabel && body.maViTri == null) {
+          setLoiGuiPhieu(t("tx.bin_required"));
+          setDangGui(false);
+          return;
+        }
+        if (row.model.trim()) body.model = row.model.trim();
+        const res = await apiPost<GiaoDich>("/api/transactions", body);
+        moi.push(res);
       }
-      if (model.trim()) body.model = model.trim();
-      const res = await apiPost<GiaoDich>("/api/transactions", body);
-      setDanhSachGiaoDich((prev) => [res, ...prev]);
+      setDanhSachGiaoDich((prev) => [...moi, ...prev]);
       if (tiepTucNhapSauKhiLuu) {
         setBuoc("form");
-        setMaLinhKien("");
-        setModel("");
-        setSoLuong("");
-        setThung("");
-        setCachChonViTri("other");
-        prevMaLinhKienChoViTri.current = null;
+        setDongPhieu([]);
         setFileMinhChung(null);
         setCodeSearch("");
         setCodeSuggestions([]);
         setCodeSuggestionsOpen(false);
-        setSelectedLinhKien(null);
       } else {
         dongDialog();
       }
@@ -676,7 +796,7 @@ export default function TrangNhapXuat() {
       <div className="flex gap-2 overflow-x-auto pb-1">
         <motion.button
           onClick={() => setLocDanhMuc("all")}
-          className={`label-industrial px-3 py-1.5 rounded border btn-mechanical whitespace-nowrap transition-all duration-150 ${locDanhMuc === "all" ? "border-primary text-primary bg-primary/10 shadow-sm" : "border-border text-muted-foreground hover:border-primary/30"}`}
+          className={`px-3 py-1.5 rounded border btn-mechanical whitespace-nowrap transition-all duration-150 text-xs font-medium normal-case tracking-normal ${locDanhMuc === "all" ? "border-primary text-primary bg-primary/10 shadow-sm" : "border-border text-muted-foreground hover:border-primary/30"}`}
           whileTap={{ scale: 0.95 }}
           transition={{ duration: 0.15, ease: "easeOut" }}
         >
@@ -686,7 +806,7 @@ export default function TrangNhapXuat() {
           <motion.button
             key={dm.ten}
             onClick={() => setLocDanhMuc(dm.ten)}
-            className={`label-industrial px-3 py-1.5 rounded border btn-mechanical whitespace-nowrap transition-all duration-150 ${locDanhMuc === dm.ten ? "border-primary text-primary bg-primary/10 shadow-sm" : "border-border text-muted-foreground hover:border-primary/30"}`}
+            className={`px-3 py-1.5 rounded border btn-mechanical whitespace-nowrap transition-all duration-150 text-xs font-medium normal-case tracking-normal ${locDanhMuc === dm.ten ? "border-primary text-primary bg-primary/10 shadow-sm" : "border-border text-muted-foreground hover:border-primary/30"}`}
             title={dm.moTa || dm.ten}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -696,6 +816,94 @@ export default function TrangNhapXuat() {
             {dm.ten}
           </motion.button>
         ))}
+      </div>
+
+      <div className="border border-border rounded-lg overflow-hidden bg-card/30">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+          <BarChart3 className="w-4 h-4 text-muted-foreground shrink-0" aria-hidden />
+          <span className="text-sm font-semibold">{t("tx.summary_title")}</span>
+          <span className="text-muted-foreground hidden sm:inline">·</span>
+          <span className="text-xs text-muted-foreground">{tab === "IN" ? t("tx.in") : t("tx.out")}</span>
+        </div>
+        <div className="p-3 flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t("tx.summary_granularity")}</label>
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm min-w-[10rem]"
+              value={tomTatGranularity}
+              onChange={(e) => setTomTatGranularity(e.target.value as KieuTomTatTx)}
+            >
+              <option value="day">{t("tx.summary_day")}</option>
+              <option value="week">{t("tx.summary_week")}</option>
+              <option value="month">{t("tx.summary_month")}</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t("tx.summary_from")}</label>
+            <input
+              type="date"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={tomTatTuNgay}
+              onChange={(e) => setTomTatTuNgay(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t("tx.summary_to")}</label>
+            <input
+              type="date"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={tomTatDenNgay}
+              onChange={(e) => setTomTatDenNgay(e.target.value)}
+            />
+          </div>
+        </div>
+        {loiTomTat && (
+          <p className="px-3 pb-2 text-xs text-destructive">{loiTomTat}</p>
+        )}
+        <div className="px-3 pb-3 overflow-x-auto">
+          {taiTomTat ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">{t("tx.summary_loading")}</p>
+          ) : dongTomTatDaLoc.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">{t("tx.summary_empty")}</p>
+          ) : (
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">{t("tx.summary_period")}</th>
+                  <th className="py-2 pr-3 font-medium">{t("tx.summary_category")}</th>
+                  <th className="py-2 pr-3 font-medium min-w-[7rem]">{t("tx.pdf_col_operator")}</th>
+                  <th className="py-2 text-right font-medium whitespace-nowrap">{t("tx.summary_qty")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dongTomTatDaLoc.map((row, i) => {
+                  const ky =
+                    tomTatGranularity === "week"
+                      ? `${t("tx.summary_week_from")} ${formatHienThiKy(row.period, tomTatGranularity)}`
+                      : formatHienThiKy(row.period, tomTatGranularity);
+                  const cat = (row.category || "").trim()
+                    ? chuanHoaTenDanhMuc(row.category)
+                    : t("tx.summary_uncategorized");
+                  const nguoi = (row.operator || "").trim() || t("tx.summary_no_operator");
+                  return (
+                    <tr key={`${row.period}-${row.category}-${row.operator}-${i}`} className="border-b border-border/60 last:border-0">
+                      <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap">{ky}</td>
+                      <td className="py-2 pr-3">
+                        <span className={`text-[11px] px-1.5 py-0.5 rounded border font-semibold normal-case ${categoryBadgeClass(row.category || cat, row.type as KieuTab)}`}>
+                          {cat}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-xs text-foreground max-w-[12rem] truncate" title={nguoi}>
+                        {nguoi}
+                      </td>
+                      <td className="py-2 text-right tabular-nums font-medium">{Number(row.quantity).toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
       <div className="border border-border rounded-lg overflow-hidden flex flex-col max-h-96">
@@ -752,8 +960,8 @@ export default function TrangNhapXuat() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1 flex-wrap">
                         <span className="font-mono text-[11px] text-muted-foreground">{gd.partNumber}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${categoryBadgeClass(gd.category, gd.type)}`}>
-                          {gd.category}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold normal-case ${categoryBadgeClass(gd.category, gd.type)}`}>
+                          {chuanHoaTenDanhMuc(gd.category)}
                         </span>
                       </div>
                       <p className="text-xs font-medium mt-0.5 truncate">{gd.partName}</p>
@@ -802,7 +1010,7 @@ export default function TrangNhapXuat() {
       </div>
 
       <Dialog open={moForm} onOpenChange={setMoForm}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {t("tx.form_title")} · {tab === "IN" ? t("tx.in") : t("tx.out")}
@@ -835,17 +1043,13 @@ export default function TrangNhapXuat() {
                 </div>
                 <div ref={codeInputRef} className="relative">
                   <label className="label-industrial mb-1 block">{t("tx.code_label")}</label>
+                  <p className="text-[11px] text-muted-foreground mb-1.5">{t("tx.multi_add_hint")}</p>
                   <input
                     type="text"
-                    value={selectedLinhKien ? `${selectedLinhKien.partNumber} · ${selectedLinhKien.name ?? ""}` : codeSearch}
+                    value={codeSearch}
                     onChange={(e) => {
-                      const v = e.target.value;
-                      setCodeSearch(v);
+                      setCodeSearch(e.target.value);
                       setLoiFormPhieu(null);
-                      if (selectedLinhKien) {
-                        setSelectedLinhKien(null);
-                        setMaLinhKien("");
-                      }
                     }}
                     onFocus={() => {
                       if (codeSearch.trim()) setCodeSuggestionsOpen(true);
@@ -854,7 +1058,7 @@ export default function TrangNhapXuat() {
                     className="w-full px-3 py-2.5 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
                   />
                   {loadingCodeSuggestions && (
-                    <span className="absolute right-3 top-9 text-muted-foreground" aria-hidden>
+                    <span className="absolute right-3 top-[4.25rem] text-muted-foreground" aria-hidden>
                       <Loader2 className="w-4 h-4 animate-spin" />
                     </span>
                   )}
@@ -874,12 +1078,8 @@ export default function TrangNhapXuat() {
                             className="px-3 py-2 cursor-pointer hover:bg-muted focus:bg-muted focus:outline-none"
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              setMaLinhKien(lk.partNumber);
-                              setSelectedLinhKien(lk);
-                              setModel((lk as unknown as { model?: string }).model ?? "");
-                              setCodeSearch("");
-                              setCodeSuggestionsOpen(false);
-                              setCodeSuggestions([]);
+                              themDongTuLinhKien(lk);
+                              setLoiFormPhieu(null);
                             }}
                           >
                             <span className="font-mono text-xs text-muted-foreground">{lk.partNumber}</span>
@@ -890,119 +1090,166 @@ export default function TrangNhapXuat() {
                     </ul>
                   )}
                 </div>
-                <div>
-                  <label className="label-industrial mb-1 block">{t("tx.part_name")} ({t("tx.description_label")})</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={tenLinhKien}
-                    className="w-full px-3 py-2.5 bg-muted/50 border border-border rounded-lg text-sm text-muted-foreground"
-                  />
-                </div>
-                <div>
-                  <label className="label-industrial mb-1 block">{t("tx.model_label_short")} ({t("tx.optional")})</label>
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder=""
-                    className="w-full px-3 py-2.5 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="label-industrial mb-1 block">{t("tx.quantity_label")}</label>
-                  <input
-                    ref={soLuongInputRef}
-                    type="number"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    min={1}
-                    value={soLuong}
-                    onChange={(e) => { setSoLuong(e.target.value); setLoiFormPhieu(null); }}
-                    className="w-full px-3 py-2.5 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                  {!!maLinhKien && (() => {
-                    const lk = selectedLinhKien ?? linhKienChon;
-                    const caDem  = lk?.quantity ?? 0;
-                    const caNgay = lk?.tonCuoiCaNgay;
-                    const thucTe = lk?.tonThucTe;
-                    const viTri  = lk?.viTriText;
-                    return (
-                      <div className="mt-1.5 flex flex-col gap-0.5">
-                        {viTri && (
-                          <p className="text-[11px] text-orange-600 font-semibold">
-                            📍 Vị trí: <span className="font-mono">{viTri}</span>
-                          </p>
-                        )}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {caNgay != null && (
-                            <span className="text-[11px] bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 text-violet-700 font-mono font-semibold">
-                              Ca ngày: {caNgay.toLocaleString()}
-                            </span>
-                          )}
-                          <span className={`text-[11px] rounded px-1.5 py-0.5 font-mono font-semibold border ${
-                            caDem <= 0 ? "bg-muted/50 border-border/40 text-muted-foreground"
-                            : caDem < 10 ? "bg-amber-50 border-amber-200 text-amber-700"
-                            : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                          }`}>
-                            Ca đêm: {caDem.toLocaleString()}
-                          </span>
-                          {thucTe != null && thucTe !== caDem && (
-                            <span className="text-[11px] bg-red-50 border border-red-200 rounded px-1.5 py-0.5 text-red-600 font-mono font-semibold">
-                              Thực tế: {thucTe.toLocaleString()} ({thucTe - caDem > 0 ? "+" : ""}{thucTe - caDem})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {!!soLuongNhap && !!maLinhKien && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {t("tx.converted_qty")} ({t("tx.ratio_label")} {heSoQuyDoi}): <span className="font-semibold text-foreground">{soLuongQuyDoi.toLocaleString()}</span> pcs
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="label-industrial">{t("tx.lines_title")}</span>
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      {dongPhieu.length > 0 ? `${dongPhieu.length} ${t("tx.line_count_suffix")}` : ""}
+                    </span>
+                  </div>
+                  {dongPhieu.length === 0 ? (
+                    <p className="text-xs text-muted-foreground border border-dashed border-border rounded-lg px-3 py-4 text-center">
+                      {t("tx.lines_empty")}
                     </p>
-                  )}
-                </div>
-                <div>
-                  <span className="label-industrial mb-1 block">{t("tx.bin_label")}</span>
-                  {nhanThungHienTai ? (
-                    <RadioGroup
-                      value={cachChonViTri}
-                      onValueChange={(v) => {
-                        setCachChonViTri(v as CachChonViTri);
-                        setLoiFormPhieu(null);
-                        if (v === "current") setThung("");
-                      }}
-                      className="gap-2.5"
-                    >
-                      <div className="flex items-start gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2">
-                        <RadioGroupItem value="current" id="tx-bin-current" className="mt-0.5" />
-                        <Label htmlFor="tx-bin-current" className="cursor-pointer font-normal leading-snug">
-                          <span className="text-sm text-foreground">{t("tx.bin_use_current")}</span>
-                          <span className="mt-0.5 block font-mono text-xs text-primary">{nhanThungHienTai}</span>
-                        </Label>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2">
-                        <RadioGroupItem value="other" id="tx-bin-other" />
-                        <Label htmlFor="tx-bin-other" className="cursor-pointer font-normal text-sm">
-                          {t("tx.bin_pick_other")}
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  ) : null}
-                  {(cachChonViTri === "other" || !nhanThungHienTai) && (
-                    <select
-                      ref={thungSelectRef}
-                      value={thung}
-                      onChange={(e) => { setThung(e.target.value); setLoiFormPhieu(null); }}
-                      className={`w-full px-3 py-2.5 bg-muted border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary ${nhanThungHienTai ? "mt-2" : ""}`}
-                    >
-                      <option value="">{t("tx.select_bin")}</option>
-                      {danhSachThung.map((lb) => (
-                        <option key={lb} value={lb}>
-                          {lb}
-                        </option>
-                      ))}
-                    </select>
+                  ) : (
+                    dongPhieu.map((row) => {
+                      const nk = layNhanThungHienTai(row.lk, danhSachThung);
+                      const heSo = row.lk.lossRate && row.lk.lossRate > 0 ? row.lk.lossRate : 1;
+                      const sl = parseInt(row.soLuong, 10) || 0;
+                      const quyDoi = sl * heSo;
+                      const caDem = row.lk.quantity ?? 0;
+                      const caNgay = row.lk.tonCuoiCaNgay;
+                      const thucTe = row.lk.tonThucTe;
+                      const viTri = row.lk.viTriText;
+                      return (
+                        <div key={row.id} className="border border-border rounded-lg p-3 space-y-2 bg-muted/20">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-mono text-xs font-semibold text-foreground truncate">{row.lk.partNumber}</p>
+                              <p className="text-[11px] text-muted-foreground line-clamp-2">{row.lk.name || "—"}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { xoaDong(row.id); setLoiFormPhieu(null); }}
+                              className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              aria-label={t("tx.remove_line")}
+                              title={t("tx.remove_line")}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-0.5">{t("tx.quantity_label")}</label>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                value={row.soLuong}
+                                onChange={(e) => {
+                                  capNhatDong(row.id, { soLuong: e.target.value });
+                                  setLoiFormPhieu(null);
+                                }}
+                                className="w-full px-2 py-1.5 bg-background border border-border rounded-md text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                                {t("tx.model_label_short")} ({t("tx.optional")})
+                              </label>
+                              <input
+                                type="text"
+                                value={row.model}
+                                onChange={(e) => capNhatDong(row.id, { model: e.target.value })}
+                                className="w-full px-2 py-1.5 bg-background border border-border rounded-md text-sm"
+                              />
+                            </div>
+                          </div>
+                          {sl > 0 && heSo !== 1 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {t("tx.converted_qty")} ({t("tx.ratio_label")} {heSo}):{" "}
+                              <span className="font-semibold text-foreground">{quyDoi.toLocaleString()}</span> pcs
+                            </p>
+                          )}
+                          {viTri && (
+                            <p className="text-[10px] text-orange-600 font-semibold">
+                              📍 {viTri}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {caNgay != null && (
+                              <span className="text-[10px] bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 text-violet-700 font-mono">
+                                Ca ngày: {caNgay.toLocaleString()}
+                              </span>
+                            )}
+                            <span
+                              className={`text-[10px] rounded px-1.5 py-0.5 font-mono border ${
+                                caDem <= 0
+                                  ? "bg-muted/50 border-border/40 text-muted-foreground"
+                                  : caDem < 10
+                                    ? "bg-amber-50 border-amber-200 text-amber-700"
+                                    : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                              }`}
+                            >
+                              Ca đêm: {caDem.toLocaleString()}
+                            </span>
+                            {thucTe != null && thucTe !== caDem && (
+                              <span className="text-[10px] bg-red-50 border border-red-200 rounded px-1.5 py-0.5 text-red-600 font-mono">
+                                TT: {thucTe.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block mb-1">{t("tx.bin_label")}</span>
+                            {(() => {
+                              const maVt = maViTriFromLk(row.lk);
+                              const coViTriHienTai = Boolean(nk) || maVt != null;
+                              const nhanViTriHienTai = nk || (maVt != null ? `${t("tx.bin_ma_vi_tri")} ${maVt}` : "");
+                              return (
+                                <>
+                                  {coViTriHienTai ? (
+                                    <RadioGroup
+                                      value={row.cachChonViTri}
+                                      onValueChange={(v) => {
+                                        capNhatDong(row.id, {
+                                          cachChonViTri: v as CachChonViTri,
+                                          thung: v === "current" ? "" : row.thung,
+                                        });
+                                        setLoiFormPhieu(null);
+                                      }}
+                                      className="gap-2"
+                                    >
+                                      <div className="flex items-start gap-2 rounded-md border border-border/80 bg-background/80 px-2 py-1.5">
+                                        <RadioGroupItem value="current" id={`${row.id}-cur`} className="mt-0.5" />
+                                        <Label htmlFor={`${row.id}-cur`} className="cursor-pointer font-normal leading-snug text-xs">
+                                          <span className="text-foreground">{t("tx.bin_use_current")}</span>
+                                          {nhanViTriHienTai ? (
+                                            <span className="mt-0.5 block font-mono text-[11px] text-primary">{nhanViTriHienTai}</span>
+                                          ) : null}
+                                        </Label>
+                                      </div>
+                                      <div className="flex items-center gap-2 rounded-md border border-border/80 bg-background/80 px-2 py-1.5">
+                                        <RadioGroupItem value="other" id={`${row.id}-oth`} />
+                                        <Label htmlFor={`${row.id}-oth`} className="cursor-pointer font-normal text-xs">
+                                          {t("tx.bin_pick_other")}
+                                        </Label>
+                                      </div>
+                                    </RadioGroup>
+                                  ) : null}
+                                  {(row.cachChonViTri === "other" || !coViTriHienTai) && (
+                                    <select
+                                      value={row.thung}
+                                      onChange={(e) => {
+                                        capNhatDong(row.id, { thung: e.target.value });
+                                        setLoiFormPhieu(null);
+                                      }}
+                                      className={`w-full px-2 py-1.5 bg-background border border-border rounded-md text-sm ${coViTriHienTai ? "mt-1.5" : ""}`}
+                                    >
+                                      <option value="">{t("tx.select_bin")}</option>
+                                      {danhSachThung.map((lb) => (
+                                        <option key={lb} value={lb}>
+                                          {lb}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1037,40 +1284,43 @@ export default function TrangNhapXuat() {
                   <CheckCircle className="w-4 h-4 text-status-ok" />
                   {t("tx.confirm_info")}
                 </p>
-                <div className="border border-border rounded-lg p-4 space-y-2 text-sm">
+                <div className="border border-border rounded-lg p-4 space-y-3 text-sm max-h-[min(50vh,20rem)] overflow-y-auto">
                   <p>
                     <span className="text-muted-foreground">{t("tx.category_label")}:</span>{" "}
                     {danhMuc}
                   </p>
-                  <p>
-                    <span className="text-muted-foreground">{t("tx.part_code")}:</span>{" "}
-                    {maLinhKien}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">{t("tx.part_name")}:</span>{" "}
-                    {tenLinhKien || "—"}
-                  </p>
-                  {model.trim() ? (
-                    <p>
-                      <span className="text-muted-foreground">{t("tx.model_label")}:</span>{" "}
-                      {model.trim()}
-                    </p>
-                  ) : null}
-                  <p>
-                    <span className="text-muted-foreground">{t("tx.quantity_label")}:</span>{" "}
-                    {tab === "IN" ? "+" : "-"}
-                    {soLuong}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">{t("tx.bin_label")}:</span>{" "}
-                    <span className="font-mono">
-                      {binLabelHieuLuc.trim() ||
-                        (maViTriTuLinhKien != null ? `${t("tx.bin_ma_vi_tri")} ${maViTriTuLinhKien}` : "—")}
-                    </span>
-                    {nhanThungHienTai && cachChonViTri === "current" ? (
-                      <span className="ml-1.5 text-[10px] text-muted-foreground">({t("tx.bin_saved_as_current")})</span>
-                    ) : null}
-                  </p>
+                  <p className="text-xs font-medium text-muted-foreground">{t("tx.lines_title")}</p>
+                  <ul className="space-y-2">
+                    {dongPhieu.map((row) => {
+                      const bl = getBinLabelRow(row);
+                      const maVt = maViTriFromLk(row.lk);
+                      const binDisplay =
+                        bl.trim() ||
+                        (maVt != null ? `${t("tx.bin_ma_vi_tri")} ${maVt}` : "—");
+                      return (
+                        <li
+                          key={row.id}
+                          className="border border-border/80 rounded-md p-2.5 bg-muted/30 text-xs space-y-1"
+                        >
+                          <p className="font-mono font-semibold">{row.lk.partNumber}</p>
+                          <p className="text-muted-foreground line-clamp-2">{row.lk.name || "—"}</p>
+                          {row.model.trim() ? (
+                            <p>
+                              <span className="text-muted-foreground">{t("tx.model_label")}:</span> {row.model.trim()}
+                            </p>
+                          ) : null}
+                          <p>
+                            <span className="text-muted-foreground">{t("tx.quantity_label")}:</span>{" "}
+                            {tab === "IN" ? "+" : "-"}
+                            {row.soLuong}
+                          </p>
+                          <p className="font-mono">
+                            <span className="text-muted-foreground">{t("tx.bin_label")}:</span> {binDisplay}
+                          </p>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               </div>
               <DialogFooter>

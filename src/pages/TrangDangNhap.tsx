@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/NguCanhXacThuc";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
 import { Loader2, Users } from "lucide-react";
 import { APP_LOGO_URL } from "@/lib/app-icon";
+import loginLogo from "@/assets/logo-login.png";
 import { nhanQuyenTuMa } from "@/lib/quyenLabels";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -107,7 +108,7 @@ export default function TrangDangNhap() {
         <div className="flex flex-col items-center gap-4 pt-1">
           <div className="flex items-center justify-center rounded-2xl bg-white/40 p-3 ring-1 ring-white/60 shadow-sm">
             <img
-              src={APP_LOGO_URL}
+              src={loginLogo}
               alt=""
               className="h-[8.7rem] w-[8.7rem] sm:h-[9.6rem] sm:w-[9.6rem] object-contain"
               style={{ filter: "drop-shadow(0 4px 14px rgba(18,10,143,0.14))" }}

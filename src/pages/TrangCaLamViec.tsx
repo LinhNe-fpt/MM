@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { usePhanTrang } from "@/lib/usePhanTrang";
 import { PhanTrang } from "@/components/ui/PhanTrang";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarClock, Play, Square, Clock, Loader2,
@@ -10,7 +11,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { API_BASE } from "@/api/client";
-import { SO_DONG_MOT_TRANG } from "@/lib/usePhanTrang";
 import { useCa, CaLamViec, KetQuaBatDauCa } from "@/contexts/NguCanhCa";
 import { useAuth } from "@/contexts/NguCanhXacThuc";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
@@ -37,6 +37,7 @@ function SpinIcon({ busy, Icon, cls = "w-4 h-4" }: { busy: boolean; Icon: Lucide
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ShiftItem extends CaLamViec {
+  loaiCa: "day" | "day_ot" | "night" | "night_ot" | "gap";
   soPhieu: number;
   tongNhap: number;
   tongXuat: number;
@@ -241,6 +242,21 @@ function ShiftCard({ item, isAdmin, onViewReport, onForceClose }: {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold">{item.tenNguoiDung ?? `#${item.maNguoiDung}`}</span>
+              <span
+                className={`text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-full border ${
+                  item.loaiCa === "day"
+                    ? "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800"
+                    : item.loaiCa === "night"
+                      ? "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-800"
+                      : "bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                }`}
+              >
+                {item.loaiCa === "day"
+                  ? t("khsx.shift_cn")
+                  : item.loaiCa === "night"
+                    ? t("khsx.shift_cd")
+                    : t("shift.shift_gap")}
+              </span>
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
                 {isActive ? t("shift.status_active") : t("shift.status_closed")}
               </span>
@@ -503,6 +519,8 @@ export default function TrangCaLamViec() {
   const { t } = useI18n();
   const { id: paramId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const routerLocation = useLocation();
+  const daBaoBatBuocCa = useRef(false);
   const { user } = useAuth();
   const { caHienTai, batDauCa, batDauCaForce, ketThucCa, adminDongCa, reload } = useCa();
 
@@ -515,6 +533,14 @@ export default function TrangCaLamViec() {
   const [reportId, setReportId] = useState<number | null>(paramId ? parseInt(paramId) : null);
   const [trangDanhSachCa, setTrangDanhSachCa] = useState(1);
   const [phienTaiDanhSachCa, setPhienTaiDanhSachCa] = useState(0);
+  const [locKieuCa, setLocKieuCa] = useState<"all" | "day" | "night">("all");
+  /** Lọc theo nhân viên (admin: chọn user; nhân viên: Tất cả / Chỉ ca của tôi) */
+  const [locNhanVien, setLocNhanVien] = useState<number | "all">("all");
+  const [dsNhanVien, setDsNhanVien] = useState<{ id: number; label: string }[]>([]);
+  const maNguoiDungToi = user ? parseInt(String(user.id), 10) : 0;
+
+  /** Ít ca hơn mỗi trang để dễ lướt và phân trang rõ hơn */
+  const soCaMotTrang = 10;
 
   // Dialog state
   const [sameUserDialog, setSameUserDialog] = useState<{ maCa: number } | null>(null);
@@ -524,8 +550,44 @@ export default function TrangCaLamViec() {
 
   const pendingGhiChuRef = useRef<string | undefined>(undefined);
 
-  const soCaMotTrang = SO_DONG_MOT_TRANG;
   const tongSoTrangCa = Math.max(1, Math.ceil(total / soCaMotTrang));
+
+  useEffect(() => {
+    const st = routerLocation.state as { requireShift?: boolean } | null | undefined;
+    if (st?.requireShift && !daBaoBatBuocCa.current) {
+      daBaoBatBuocCa.current = true;
+      toast.info(t("shift.mandatory_must_start"));
+      navigate({ pathname: routerLocation.pathname, search: routerLocation.search, hash: routerLocation.hash }, { replace: true, state: {} });
+    }
+  }, [routerLocation.state, routerLocation.pathname, routerLocation.search, routerLocation.hash, navigate, t]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setDsNhanVien([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/users`);
+        if (!res.ok || cancelled) return;
+        const rows = (await res.json()) as { id: number; taiKhoan: string; hoTen: string | null }[];
+        setDsNhanVien(
+          rows
+            .map((r) => ({
+              id: r.id,
+              label: (r.hoTen && String(r.hoTen).trim()) ? String(r.hoTen) : r.taiKhoan,
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label, "vi")),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -533,10 +595,37 @@ export default function TrangCaLamViec() {
     (async () => {
       try {
         const offset = (trangDanhSachCa - 1) * soCaMotTrang;
-        const res = await fetch(`${API_BASE}/api/shifts?limit=${soCaMotTrang}&offset=${offset}`);
+        const qs = new URLSearchParams({
+          limit: String(soCaMotTrang),
+          offset: String(offset),
+        });
+        if (locKieuCa === "day") qs.set("kieuCa", "day");
+        else if (locKieuCa === "night") qs.set("kieuCa", "night");
+        if (locNhanVien !== "all") qs.set("maNguoiDung", String(locNhanVien));
+        const res = await fetch(`${API_BASE}/api/shifts?${qs}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
-        const items = data.items ?? [];
+        const raw = data.items ?? [];
+        const items: ShiftItem[] = raw.map((r: CaLamViec & { loaiCa?: string; soPhieu?: number; tongNhap?: number; tongXuat?: number }) => {
+          const v = String(r.loaiCa ?? "").toLowerCase();
+          const lc: ShiftItem["loaiCa"] =
+            v === "day"
+              ? "day"
+              : v === "day_ot"
+                ? "day_ot"
+                : v === "night"
+                  ? "night"
+                  : v === "night_ot"
+                    ? "night_ot"
+                    : "gap";
+          return {
+            ...r,
+            loaiCa: lc,
+            soPhieu: Number(r.soPhieu) || 0,
+            tongNhap: Number(r.tongNhap) || 0,
+            tongXuat: Number(r.tongXuat) || 0,
+          };
+        });
         const tot = Number(data.total) || 0;
         const maxTrang = Math.max(1, Math.ceil(tot / soCaMotTrang));
         if (!cancelled) {
@@ -553,7 +642,7 @@ export default function TrangCaLamViec() {
     return () => {
       cancelled = true;
     };
-  }, [trangDanhSachCa, phienTaiDanhSachCa, soCaMotTrang]);
+  }, [trangDanhSachCa, phienTaiDanhSachCa, soCaMotTrang, locKieuCa, locNhanVien]);
 
   const taiLaiDanhSachCa = useCallback((veTrangDau?: boolean) => {
     if (veTrangDau) setTrangDanhSachCa(1);
@@ -666,7 +755,7 @@ export default function TrangCaLamViec() {
   };
 
   return (
-    <div className="flex flex-col h-full max-w-3xl mx-auto">
+    <div className="flex flex-col h-full max-w-3xl xl:max-w-5xl mx-auto w-full">
       {/* Header */}
       <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
@@ -711,8 +800,58 @@ export default function TrangCaLamViec() {
           </div>
         )}
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{t("shift.history_label")} ({total})</span>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>{t("shift.history_label")} ({total})</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(["all", "day", "night"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  setLocKieuCa(k);
+                  setTrangDanhSachCa(1);
+                }}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  locKieuCa === k
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                {k === "all" ? t("khsx.shift_all") : k === "day" ? t("khsx.shift_cn") : t("khsx.shift_cd")}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-xs text-muted-foreground shrink-0">{t("shift.filter_staff")}</span>
+            <select
+              className="text-xs rounded-md border border-border bg-background px-2 py-1.5 min-w-[11rem] max-w-[min(100%,18rem)]"
+              value={locNhanVien === "all" ? "" : String(locNhanVien)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setLocNhanVien(v === "" ? "all" : parseInt(v, 10));
+                setTrangDanhSachCa(1);
+              }}
+              aria-label={t("shift.filter_staff")}
+            >
+              <option value="">
+                {isAdmin ? t("shift.filter_all_staff") : t("khsx.shift_all")}
+              </option>
+              {isAdmin
+                ? dsNhanVien.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.label}
+                    </option>
+                  ))
+                : maNguoiDungToi > 0
+                  ? (
+                      <option value={String(maNguoiDungToi)}>{t("shift.filter_my_shifts_only")}</option>
+                    )
+                  : null}
+            </select>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-snug">{t("shift.shift_classify_hint")}</p>
         </div>
         <div className="h-px bg-border" />
       </div>

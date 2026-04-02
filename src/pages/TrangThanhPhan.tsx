@@ -58,6 +58,14 @@ const EMPTY_FORM: LinhKienForm = {
   hinhAnhUrl: "",
 };
 
+/** Số lượng hiển thị gọn (≤1 chữ số thập phân); hover `title` vẫn có thể gắn giá trị đầy đủ */
+function formatSoLuongGon(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  const lamTron = Math.round(n * 10) / 10;
+  if (Number.isInteger(lamTron)) return Math.round(lamTron).toLocaleString("vi-VN");
+  return lamTron.toLocaleString("vi-VN", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+}
+
 function OVuongAnhLinhKien({
   src,
   title,
@@ -512,7 +520,7 @@ export default function TrangThanhPhan() {
   const [trangHienTai, setTrangHienTai] = useState(1);
   // "has-stock" | "assembly" | "leaf" | "all"
   const [boLocLoai, setBoLocLoai] = useState<"has-stock" | "assembly" | "leaf" | "all">("has-stock");
-  const itemsPerPage = 20;
+  const itemsPerPage = 6;
   const boLocTrangThai = (searchParams.get("status") || "").toLowerCase();
 
   // CRUD state
@@ -897,7 +905,7 @@ export default function TrangThanhPhan() {
       {/* Danh sách — cuộn nội bộ */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto px-4 md:px-6 pb-6">
         {/* Table header */}
-        <div className="grid grid-cols-[2rem_4rem_13rem_minmax(12rem,1fr)_minmax(18rem,22rem)_8.5rem] gap-x-4 gap-y-1 min-w-[56rem] px-3 py-2.5 text-[11px] md:text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b border-border mb-2 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+        <div className="grid grid-cols-[2rem_4rem_13rem_minmax(12rem,1fr)_minmax(15rem,18.5rem)_8.5rem] gap-x-3 gap-y-1 min-w-[52rem] px-3 py-2.5 text-[11px] md:text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b border-border mb-2 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
           {/* Select-all checkbox */}
           <button
             type="button"
@@ -912,19 +920,19 @@ export default function TrangThanhPhan() {
           <span className="text-center leading-tight">{t("comp.col_image")}</span>
           <span>Mã linh kiện</span>
           <span>Thông tin</span>
-          <span className="grid grid-cols-4 gap-1.5 text-center text-[10px] md:text-[11px] leading-tight">
-            <span className="rounded-md px-1.5 py-1 bg-muted/60 text-muted-foreground">Đầu kỳ</span>
-            <span className="rounded-md px-1.5 py-1 bg-violet-100 text-violet-700">Ca ngày</span>
-            <span className="rounded-md px-1.5 py-1 bg-emerald-100 text-emerald-700">Ca đêm</span>
-            <span className="rounded-md px-1.5 py-1 bg-sky-100 text-sky-700">Thực tế</span>
+          <span className="grid grid-cols-4 gap-1 text-center text-[9px] md:text-[10px] leading-tight">
+            <span className="rounded px-1 py-0.5 bg-muted/60 text-muted-foreground">Đầu kỳ</span>
+            <span className="rounded px-1 py-0.5 bg-violet-100 text-violet-700">Ca ngày</span>
+            <span className="rounded px-1 py-0.5 bg-emerald-100 text-emerald-700">Ca đêm</span>
+            <span className="rounded px-1 py-0.5 bg-sky-100 text-sky-700">Thực tế</span>
           </span>
           <span className="text-right">{t("comp.actions") || "Actions"}</span>
         </div>
-        <p className="text-[10px] text-muted-foreground px-3 mb-2 leading-snug max-w-[56rem] border-b border-border/40 pb-2">
+        <p className="text-[10px] text-muted-foreground px-3 mb-2 leading-snug max-w-[52rem] border-b border-border/40 pb-2">
           {t("comp.stock_lech_legend")}
         </p>
 
-        <motion.div className="space-y-1 min-w-[56rem]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}>
+        <motion.div className="space-y-1 min-w-[52rem]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}>
           {danhSachHienThi.length === 0 && (
             <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
               <p className="font-medium text-foreground mb-1">Không có linh kiện khớp bộ lọc</p>
@@ -947,7 +955,7 @@ export default function TrangThanhPhan() {
             return (
               <motion.div
                 key={lk.id}
-                className={`group grid grid-cols-[2rem_4rem_13rem_minmax(12rem,1fr)_minmax(18rem,22rem)_8.5rem] gap-x-4 gap-y-1 items-center px-3 py-3.5 md:py-4 rounded-xl border transition-all duration-150 ${
+                className={`group grid grid-cols-[2rem_4rem_13rem_minmax(12rem,1fr)_minmax(15rem,18.5rem)_8.5rem] gap-x-3 gap-y-1 items-center px-3 py-3 md:py-3.5 rounded-xl border transition-all duration-150 ${
                   isSelected ? "border-primary/40 bg-primary/5"
                   : hasLech  ? "border-red-200 bg-red-50/40 hover:bg-red-50/60"
                   : "border-transparent hover:border-border hover:bg-muted/30"
@@ -1075,15 +1083,18 @@ export default function TrangThanhPhan() {
                     numColor: (v: number) => string,
                     diff?: number
                   ) => (
-                    <div className={`flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.25rem] ${bg}`}>
-                      <span className={`font-mono font-semibold tabular-nums text-base leading-none ${
+                    <div
+                      className={`flex flex-col items-center justify-center gap-0.5 py-1 min-h-[2.5rem] ${bg}`}
+                      title={v != null && Number.isFinite(v as number) ? String(v as number) : undefined}
+                    >
+                      <span className={`font-mono font-semibold tabular-nums text-sm leading-none ${
                         v == null || (v as number) <= 0 ? "text-muted-foreground/40" : numColor(v as number)
                       }`}>
-                        {v == null ? "—" : (v as number).toLocaleString()}
+                        {v == null ? "—" : formatSoLuongGon(v as number)}
                       </span>
                       {diff !== undefined && Math.abs(diff) > 0 && (
-                        <span className={`text-[10px] font-bold leading-none ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
-                          {diff > 0 ? `+${diff}` : diff}
+                        <span className={`text-[9px] font-bold leading-none ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
+                          {diff > 0 ? `+${formatSoLuongGon(diff)}` : formatSoLuongGon(diff)}
                         </span>
                       )}
                     </div>
@@ -1091,7 +1102,7 @@ export default function TrangThanhPhan() {
 
                   return (
                     <div className="min-w-0 space-y-1">
-                      <div className="grid grid-cols-4 gap-1.5 rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-4 gap-1 rounded-lg overflow-hidden">
                         {cell(lk.tonDau ?? 0, "rounded-md bg-muted/50 border border-muted-foreground/10",
                               () => "text-foreground/60")}
                         {cell(caNgay,          "rounded-md bg-violet-50 border border-violet-200/60",
@@ -1099,18 +1110,21 @@ export default function TrangThanhPhan() {
                         {cell(caDem,           "rounded-md bg-emerald-50 border border-emerald-200/60",
                               (v) => v < 10 ? "text-amber-600" : "text-emerald-700")}
                         {coLech ? (
-                          <div className="relative rounded-lg bg-red-500 border-2 border-red-500 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.25rem] shadow-md shadow-red-200 ring-2 ring-red-400/40 ring-offset-1">
-                            <div className="flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5 text-red-100 shrink-0" />
-                              <span className="font-mono font-bold tabular-nums text-base text-white leading-none">
-                                {thucTe == null ? "—" : thucTe.toLocaleString()}
+                          <div
+                            className="relative rounded-lg bg-red-500 border-2 border-red-500 flex flex-col items-center justify-center gap-0.5 py-1 min-h-[2.5rem] shadow-md shadow-red-200 ring-2 ring-red-400/40 ring-offset-1"
+                            title={thucTe != null ? String(thucTe) : undefined}
+                          >
+                            <div className="flex items-center gap-0.5">
+                              <AlertTriangle className="w-3 h-3 text-red-100 shrink-0" />
+                              <span className="font-mono font-bold tabular-nums text-sm text-white leading-none">
+                                {thucTe == null ? "—" : formatSoLuongGon(thucTe)}
                               </span>
                             </div>
                             <span
-                              className={`text-[10px] font-bold leading-none px-1.5 py-0.5 rounded ${lech > 0 ? "bg-green-400/30 text-green-100" : "bg-white/20 text-white"}`}
+                              className={`text-[9px] font-bold leading-none px-1 py-0.5 rounded ${lech > 0 ? "bg-green-400/30 text-green-100" : "bg-white/20 text-white"}`}
                               title={t("comp.stock_lech_tooltip")}
                             >
-                              {lech > 0 ? `+${lech}` : lech}
+                              {lech > 0 ? `+${formatSoLuongGon(lech)}` : formatSoLuongGon(lech)}
                             </span>
                           </div>
                         ) : (
@@ -1207,13 +1221,13 @@ export default function TrangThanhPhan() {
                             <td className="py-2 pr-2 font-mono text-xs">{row.code ?? "—"}</td>
                             <td className="py-2 pr-2">{row.itemDescription ?? "—"}</td>
                             <td className="py-2 pr-2 text-right tabular-nums font-medium text-emerald-800 dark:text-emerald-300">
-                              {row.tonKho != null ? row.tonKho.toLocaleString() : "—"}
+                              {row.tonKho != null ? formatSoLuongGon(row.tonKho) : "—"}
                             </td>
-                            <td className="py-2 pr-2 text-right tabular-nums">{row.qtyPlan != null ? row.qtyPlan.toLocaleString() : "—"}</td>
-                            <td className="py-2 pr-2 text-right tabular-nums">{row.qtyKitting != null ? row.qtyKitting.toLocaleString() : "—"}</td>
+                            <td className="py-2 pr-2 text-right tabular-nums">{row.qtyPlan != null ? formatSoLuongGon(row.qtyPlan) : "—"}</td>
+                            <td className="py-2 pr-2 text-right tabular-nums">{row.qtyKitting != null ? formatSoLuongGon(row.qtyKitting) : "—"}</td>
                             <td className="py-2 pr-2 text-right tabular-nums">{row.heSo ?? "—"}</td>
                             <td className="py-2 pr-2">{row.donVi ?? "—"}</td>
-                            <td className="py-2 pr-2 text-right tabular-nums">{row.xuatSX != null ? row.xuatSX.toLocaleString() : "—"}</td>
+                            <td className="py-2 pr-2 text-right tabular-nums">{row.xuatSX != null ? formatSoLuongGon(row.xuatSX) : "—"}</td>
                             <td className="py-2 text-muted-foreground">{row.remark ?? "—"}</td>
                           </tr>
                         ))}

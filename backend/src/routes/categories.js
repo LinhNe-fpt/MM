@@ -4,6 +4,27 @@ const sql = require("mssql");
 
 const router = Router();
 
+/** Chuẩn hóa nhãn danh mục (Unicode đầy đủ) — tránh chuỗi lỗi kiểu "SX TR?" từ VARCHAR / encoding. */
+function chuanHoaTenDanhMuc(s) {
+  const t = String(s || "").trim();
+  if (!t) return t;
+  const one = t.replace(/\s+/g, " ");
+  if (/^SX TR[?\uFFFD]$/i.test(one)) return "SX TRẢ";
+  if (/^SX TR$/i.test(one)) return "SX TRẢ";
+  return t;
+}
+
+function gopDanhMucTheoTen(rows, layTen, layMoTa) {
+  const map = new Map();
+  for (const r of rows) {
+    const ten = chuanHoaTenDanhMuc(layTen(r));
+    const moTa = String(layMoTa(r) || "").trim();
+    if (!map.has(ten)) map.set(ten, { ten, moTa });
+    else if (moTa && !map.get(ten).moTa) map.set(ten, { ten, moTa });
+  }
+  return [...map.values()];
+}
+
 // ─── GET /api/categories ─────────────────────────────────────────────────────
 // Trả về danh mục từ bảng DanhMucGiaoDich (ưu tiên), fallback từ PhieuKho
 
@@ -19,12 +40,10 @@ async function listCategories(req, res) {
       ORDER BY LoaiGiaoDich, ThuTu, TenDanhMuc
     `);
 
-    const inList  = result.recordset.filter(r => r.LoaiGiaoDich === "IN").map(r => ({
-      ten: r.TenDanhMuc, moTa: r.MoTa || ""
-    }));
-    const outList = result.recordset.filter(r => r.LoaiGiaoDich === "OUT").map(r => ({
-      ten: r.TenDanhMuc, moTa: r.MoTa || ""
-    }));
+    const inRows = result.recordset.filter(r => r.LoaiGiaoDich === "IN");
+    const outRows = result.recordset.filter(r => r.LoaiGiaoDich === "OUT");
+    const inList = gopDanhMucTheoTen(inRows, (r) => r.TenDanhMuc, (r) => r.MoTa || "");
+    const outList = gopDanhMucTheoTen(outRows, (r) => r.TenDanhMuc, (r) => r.MoTa || "");
 
     res.json({ IN: inList, OUT: outList });
   } catch (err) {
@@ -37,8 +56,10 @@ async function listCategories(req, res) {
         FROM PhieuKho WHERE LoaiChiTiet IS NOT NULL AND LoaiChiTiet <> ''
         ORDER BY LoaiGiaoDich, LoaiChiTiet
       `);
-      const inList  = fb.recordset.filter(r => r.LoaiGiaoDich === "IN").map(r => ({ ten: r.TenDanhMuc, moTa: "" }));
-      const outList = fb.recordset.filter(r => r.LoaiGiaoDich === "OUT").map(r => ({ ten: r.TenDanhMuc, moTa: "" }));
+      const inRows = fb.recordset.filter(r => r.LoaiGiaoDich === "IN");
+      const outRows = fb.recordset.filter(r => r.LoaiGiaoDich === "OUT");
+      const inList = gopDanhMucTheoTen(inRows, (r) => r.TenDanhMuc, () => "");
+      const outList = gopDanhMucTheoTen(outRows, (r) => r.TenDanhMuc, () => "");
       res.json({ IN: inList, OUT: outList });
     } catch {
       res.status(500).json({ error: "Loi khi lay danh muc", IN: [], OUT: [] });
@@ -53,10 +74,12 @@ async function addCategory(req, res) {
     const { loaiGiaoDich, tenDanhMuc, moTa, thuTu } = req.body || {};
     if (!loaiGiaoDich || !tenDanhMuc)
       return res.status(400).json({ error: "Thieu loaiGiaoDich hoac tenDanhMuc" });
+    const tenSach = chuanHoaTenDanhMuc(String(tenDanhMuc).trim());
+    if (!tenSach) return res.status(400).json({ error: "Ten danh muc rong" });
     const pool = await getPool();
     await pool.request()
       .input("LoaiGiaoDich", sql.NVarChar(10),  String(loaiGiaoDich).toUpperCase())
-      .input("TenDanhMuc",   sql.NVarChar(50),  String(tenDanhMuc).trim())
+      .input("TenDanhMuc",   sql.NVarChar(50),  tenSach)
       .input("MoTa",         sql.NVarChar(200), moTa || null)
       .input("ThuTu",        sql.Int,           thuTu ?? 99)
       .query(`

@@ -98,6 +98,121 @@ async function layNhanThungTuMaViTri(pool, maViTri) {
   return b && String(b).trim() ? String(b).trim() : null;
 }
 
+/** Chuẩn hóa IN/OUT giống listTransactions */
+function chuanHoaLoaiGiaoDich(raw) {
+  const loai = String(raw || "").toUpperCase();
+  if (loai === "IN" || loai.includes("NHẬP") || loai.includes("NAP")) return "IN";
+  return "OUT";
+}
+
+// GET /api/transactions/summary — tổng số lượng theo danh mục (LoaiChiTiet), bucket ngày / tuần (thứ 2) / tháng
+// Query: granularity=day|week|month, type=IN|OUT (tùy chọn), from=YYYY-MM-DD, to=YYYY-MM-DD
+async function summaryTransactions(req, res) {
+  try {
+    const gran = String(req.query.granularity || "day").toLowerCase();
+    if (!["day", "week", "month"].includes(gran)) {
+      return res.status(400).json({ error: "granularity phai la day, week hoac month" });
+    }
+    const typeQ = req.query.type;
+    if (typeQ != null && typeQ !== "" && typeQ !== "IN" && typeQ !== "OUT") {
+      return res.status(400).json({ error: "type phai la IN hoac OUT" });
+    }
+
+    const toStr = req.query.to;
+    const fromStr = req.query.from;
+    const toDate = toStr ? new Date(String(toStr) + "T12:00:00") : new Date();
+    if (Number.isNaN(toDate.getTime())) {
+      return res.status(400).json({ error: "to khong hop le (YYYY-MM-DD)" });
+    }
+    let fromDate;
+    if (fromStr) {
+      fromDate = new Date(String(fromStr) + "T00:00:00");
+      if (Number.isNaN(fromDate.getTime())) {
+        return res.status(400).json({ error: "from khong hop le (YYYY-MM-DD)" });
+      }
+    } else {
+      fromDate = new Date(toDate.getTime() - 90 * 86400000);
+    }
+    if (fromDate > toDate) {
+      return res.status(400).json({ error: "from phai truoc hoac bang to" });
+    }
+
+    let bucketSql;
+    if (gran === "day") {
+      bucketSql = "CONVERT(varchar(10), CAST(p.NgayThucHien AS date), 23)";
+    } else if (gran === "month") {
+      bucketSql = "LEFT(CONVERT(varchar(10), CAST(p.NgayThucHien AS date), 23), 7)";
+    } else {
+      // Tuần theo thứ Hai (SQL Server: 1900-01-01 là thứ Hai)
+      bucketSql = `CONVERT(varchar(10),
+        DATEADD(DAY,
+          -((DATEDIFF(DAY, CAST('19000101' AS DATE), CAST(p.NgayThucHien AS DATE)) % 7)),
+          CAST(p.NgayThucHien AS DATE)
+        ), 23)`;
+    }
+
+    let query = `
+      SELECT ${bucketSql} AS period,
+             p.LoaiGiaoDich AS rawType,
+             ISNULL(NULLIF(LTRIM(RTRIM(p.LoaiChiTiet)), N''), N'') AS category,
+             MAX(ISNULL(u.HoTen, u.TaiKhoan)) AS TenNguoiThaoTac,
+             SUM(CAST(c.SoLuong AS FLOAT)) AS quantity
+      FROM ChiTietPhieuKho c
+      JOIN PhieuKho p ON p.MaPhieu = c.MaPhieu
+      LEFT JOIN NguoiDung u ON u.MaNguoiDung = p.MaNguoiDung
+      WHERE p.NgayThucHien >= @from
+        AND p.NgayThucHien < DATEADD(day, 1, CAST(@to AS date))
+    `;
+
+    const pool = await getPool();
+    const request = pool
+      .request()
+      .input("from", sql.DateTime, fromDate)
+      .input("to", sql.Date, toDate);
+
+    if (typeQ === "IN" || typeQ === "OUT") {
+      query += " AND p.LoaiGiaoDich = @type";
+      request.input("type", sql.NVarChar(50), typeQ);
+    }
+
+    query += `
+      GROUP BY ${bucketSql}, p.LoaiGiaoDich, ISNULL(NULLIF(LTRIM(RTRIM(p.LoaiChiTiet)), N''), N''), p.MaNguoiDung
+      ORDER BY period DESC, p.LoaiGiaoDich, category, TenNguoiThaoTac
+    `;
+
+    const result = await request.query(query);
+    const rows = result.recordset.map((r) => {
+      const tenNt =
+        r.TenNguoiThaoTac != null
+          ? r.TenNguoiThaoTac
+          : r.tennguoithaotac != null
+            ? r.tennguoithaotac
+            : "";
+      const op = String(tenNt || "").trim();
+      return {
+        period: r.period || "",
+        type: chuanHoaLoaiGiaoDich(r.rawType),
+        category: r.category || "",
+        operator: op,
+        quantity: Number(r.quantity) || 0,
+      };
+    });
+
+    res.json({
+      granularity: gran,
+      from: fromDate.toISOString().slice(0, 10),
+      to: toDate.toISOString().slice(0, 10),
+      rows,
+    });
+  } catch (err) {
+    console.error("GET /api/transactions/summary:", err.message || err);
+    res.status(500).json({
+      error: "Loi khi tong hop giao dich",
+      detail: process.env.NODE_ENV !== "production" ? (err.message || String(err)) : undefined,
+    });
+  }
+}
+
 // GET /api/transactions - Danh sach giao dich tu ChiTietPhieuKho + PhieuKho + Parts + ViTriKho + NguoiDung
 async function listTransactions(req, res) {
   try {
@@ -322,6 +437,7 @@ async function createTransaction(req, res) {
   }
 }
 
+router.get("/summary", summaryTransactions);
 router.get("/", listTransactions);
 router.post("/", createTransaction);
 

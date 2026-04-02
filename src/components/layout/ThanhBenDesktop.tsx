@@ -62,8 +62,8 @@ export function ThanhBenDesktop() {
         <img src={SIDEBAR_BRAND_LOGO_URL} alt="EMS Warehouse" className={`${thuGon ? "h-[3.3rem] w-[3.3rem]" : "h-[4.2rem] w-[4.2rem]"} shrink-0 object-contain`} />
         {!thuGon && (
           <div className="min-w-0">
-            <p className="font-bold text-base text-foreground tracking-tight leading-5 truncate">IMS WAREHOUSE</p>
-            <p className="text-[11px] text-muted-foreground truncate">Inventory Management System</p>
+            <p className="font-bold text-base text-foreground tracking-tight leading-5 truncate">Quản lý YSV</p>
+            <p className="text-[11px] text-muted-foreground truncate">Yousung Vina</p>
           </div>
         )}
       </div>

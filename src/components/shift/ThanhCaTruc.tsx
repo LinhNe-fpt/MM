@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Play, Square, Loader2, type LucideIcon } from "lucide-react";
 import { useCa } from "@/contexts/NguCanhCa";
@@ -19,10 +19,29 @@ function SpinIcon({ busy, Icon, cls = "w-3.5 h-3.5" }: { busy: boolean; Icon: Lu
   );
 }
 
-/** Tính thời gian đã trôi qua */
-function dungThoiGian(start: string): string {
-  const ms = Date.now() - new Date(start).getTime();
-  if (ms < 0) return "0:00";
+/** Chuẩn hoá mốc bắt đầu ca (API có thể trả string ISO, chuỗi SQL, hoặc số ms). */
+function layMsBatDauCa(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (raw instanceof Date) {
+    const t = raw.getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+  const s = String(raw).trim();
+  if (!s) return null;
+  let t = new Date(s).getTime();
+  if (Number.isNaN(t) && s.includes(" ") && !s.includes("T")) {
+    t = new Date(s.replace(" ", "T")).getTime();
+  }
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Thời gian đã trôi kể từ khi bắt đầu ca (cập nhật mỗi giây). */
+function dungThoiGianKeTuBatDau(startRaw: unknown): string {
+  const startMs = layMsBatDauCa(startRaw);
+  if (startMs == null) return "—";
+  let ms = Date.now() - startMs;
+  if (ms < 0) ms = 0;
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   const s = Math.floor((ms % 60_000) / 1_000);
@@ -37,14 +56,22 @@ export function ThanhCaTrucDesktop({ thuGon }: { thuGon: boolean }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [thoiGian, setThoiGian] = useState("0:00");
+  const caRef = useRef(caHienTai);
+  caRef.current = caHienTai;
 
   useEffect(() => {
-    if (!caHienTai) { setThoiGian("0:00"); return; }
-    const update = () => setThoiGian(dungThoiGian(caHienTai.thoiGianBatDau));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [caHienTai]);
+    if (!caHienTai) {
+      setThoiGian("0:00");
+      return;
+    }
+    const tick = () => {
+      const c = caRef.current;
+      setThoiGian(c?.thoiGianBatDau != null ? dungThoiGianKeTuBatDau(c.thoiGianBatDau) : "—");
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [caHienTai?.maCa, caHienTai?.thoiGianBatDau]);
 
   const handleStart = async () => {
     if (busy) return;
@@ -152,14 +179,22 @@ export function ThanhCaTrucMobile() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [thoiGian, setThoiGian] = useState("0:00");
+  const caRef = useRef(caHienTai);
+  caRef.current = caHienTai;
 
   useEffect(() => {
-    if (!caHienTai) { setThoiGian("0:00"); return; }
-    const update = () => setThoiGian(dungThoiGian(caHienTai.thoiGianBatDau));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [caHienTai]);
+    if (!caHienTai) {
+      setThoiGian("0:00");
+      return;
+    }
+    const tick = () => {
+      const c = caRef.current;
+      setThoiGian(c?.thoiGianBatDau != null ? dungThoiGianKeTuBatDau(c.thoiGianBatDau) : "—");
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [caHienTai?.maCa, caHienTai?.thoiGianBatDau]);
 
   const handleClick = async () => {
     if (busy) return;

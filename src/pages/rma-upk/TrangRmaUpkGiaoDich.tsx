@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { rmaUpkGet, rmaUpkPost, type RmaUpkDieuChinhRow, type RmaUpkMe, type RmaUpkTonRow } from "@/lib/rmaUpkApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,13 +10,15 @@ import { toast } from "sonner";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
 import { useKhoPhu } from "@/contexts/NguCanhKhoPhu";
 
+type DongPhieu = { ma: string; sl: string };
+
 export default function TrangRmaUpkGiaoDich() {
   const { t, ngonNgu } = useI18n();
   const { scope } = useKhoPhu();
   const maKho: "UPK" | "RMA" = scope;
   const [me, setMe] = useState<RmaUpkMe | null>(null);
   const [maLinhKien, setMaLinhKien] = useState("");
-  const [soLuongPhieu, setSoLuongPhieu] = useState("");
+  const [dong, setDong] = useState<DongPhieu[]>([]);
   const [loaiPhieu, setLoaiPhieu] = useState<"NHAP" | "XUAT">("NHAP");
   const [nhapTuUpk, setNhapTuUpk] = useState<"SEVT" | "VENDOR">("SEVT");
   const [xuatDenUpk, setXuatDenUpk] = useState<"IQC" | "MM">("IQC");
@@ -134,28 +136,47 @@ export default function TrangRmaUpkGiaoDich() {
         : xuatDenRma;
   const dsHienThiGoiY = maLinhKien.trim().length >= 2 && hienGoiYCode;
 
-  function chonGoiYCode(code: string) {
-    setMaLinhKien(code);
+  const themDong = useCallback((code: string) => {
+    const ma = code.trim();
+    if (!ma) return;
+    setDong((prev) => {
+      const idx = prev.findIndex((r) => r.ma.toUpperCase() === ma.toUpperCase());
+      if (idx >= 0) {
+        const next = [...prev];
+        const cur = parseInt(next[idx].sl, 10) || 0;
+        next[idx] = { ...next[idx], sl: String(cur + 1) };
+        return next;
+      }
+      return [...prev, { ma, sl: "1" }];
+    });
+    setMaLinhKien("");
     setHienGoiYCode(false);
     setChiSoGoiY(-1);
-  }
+  }, []);
+
+  const dongHopLe = useMemo(() => {
+    return dong
+      .map((r) => ({ maLinhKien: r.ma.trim(), soLuong: parseInt(r.sl, 10) }))
+      .filter((r) => r.maLinhKien && Number.isFinite(r.soLuong) && r.soLuong > 0);
+  }, [dong]);
 
   async function guiPhieu() {
-    const n = parseInt(soLuongPhieu, 10);
-    if (!maLinhKien.trim() || !Number.isFinite(n) || n <= 0) {
+    if (dongHopLe.length === 0) {
       toast.error(loaiPhieu === "NHAP" ? t("rmaUpk.toast_tx_need_code_qty") : t("rmaUpk.toast_tx_need_out_qty"));
       return;
     }
     try {
-      await rmaUpkPost("/api/rma-upk/adjust", {
-        maKho,
-        maLinhKien: maLinhKien.trim(),
-        delta: loaiPhieu === "NHAP" ? n : -n,
-        doiTac: doiTacPhieu,
-        ghiChu: ghiChu.trim() || undefined,
-      });
+      for (const ln of dongHopLe) {
+        await rmaUpkPost("/api/rma-upk/adjust", {
+          maKho,
+          maLinhKien: ln.maLinhKien,
+          delta: loaiPhieu === "NHAP" ? ln.soLuong : -ln.soLuong,
+          doiTac: doiTacPhieu,
+          ghiChu: ghiChu.trim() || undefined,
+        });
+      }
       toast.success(loaiPhieu === "NHAP" ? t("rmaUpk.toast_tx_in_ok") : t("rmaUpk.toast_tx_out_ok"));
-      setSoLuongPhieu("");
+      setDong([]);
       setMaLinhKien("");
       await Promise.all([loadHistory(), loadTongTon()]);
     } catch (e) {
@@ -223,7 +244,7 @@ export default function TrangRmaUpkGiaoDich() {
                   const picked = goiYCode[chiSoGoiY] || goiYCode[0];
                   if (picked) {
                     e.preventDefault();
-                    chonGoiYCode(picked.MaLinhKien);
+                    themDong(picked.MaLinhKien);
                   }
                 }
               }}
@@ -244,7 +265,7 @@ export default function TrangRmaUpkGiaoDich() {
                         type="button"
                         className={`flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-muted ${idx === chiSoGoiY ? "bg-muted" : ""}`}
                         onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => chonGoiYCode(r.MaLinhKien)}
+                        onClick={() => themDong(r.MaLinhKien)}
                       >
                         <span className="font-mono">{r.MaLinhKien}</span>
                         <span className="text-muted-foreground">{r.SoLuongTon}</span>
@@ -328,7 +349,37 @@ export default function TrangRmaUpkGiaoDich() {
 
               <div className="space-y-2">
                 <Label>{t("rmaUpk.tx_col_qty_tx")}</Label>
-                <Input className="font-mono" type="number" min={1} value={soLuongPhieu} onChange={(e) => setSoLuongPhieu(e.target.value)} placeholder={t("rmaUpk.tx_qty_ph")} />
+                {dong.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t("rmaUpk.tx_code_search_hint")}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {dong.map((r, i) => (
+                      <div key={`${r.ma}-${i}`} className="flex flex-wrap items-center gap-2">
+                        <Input className="min-w-[180px] flex-1 font-mono" value={r.ma} readOnly />
+                        <Input
+                          className="w-28 font-mono"
+                          type="number"
+                          min={1}
+                          value={r.sl}
+                          placeholder={t("rmaUpk.tx_qty_ph")}
+                          onChange={(e) => {
+                            const next = [...dong];
+                            next[i] = { ...next[i], sl: e.target.value };
+                            setDong(next);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setDong((prev) => prev.filter((_, idx) => idx !== i))}
+                        >
+                          Xóa
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

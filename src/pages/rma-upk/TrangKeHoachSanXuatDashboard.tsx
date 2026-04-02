@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/contexts/NguCanhNgonNgu";
+import { khsxCoTheChuyenSang } from "@/lib/khsxStatusFlow";
 import { rmaUpkGet, rmaUpkPost, type KhsxPlanListResult, type KhsxPlanRow, type KhsxStatus, type KhsxZone, type KhsxMaterialPlanResult } from "@/lib/rmaUpkApi";
 import { toast } from "sonner";
 
@@ -101,7 +102,11 @@ export default function TrangKeHoachSanXuatDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maKhu]);
 
-  async function doiTrangThai(id: number, status: KhsxStatus) {
+  async function doiTrangThai(id: number, hienTai: KhsxStatus, status: KhsxStatus) {
+    if (hienTai === status || !khsxCoTheChuyenSang(hienTai, status)) {
+      toast.message(t("khsx.status_transition_forbidden"));
+      return;
+    }
     try {
       await rmaUpkPost(`/api/khsx/${id}/status`, { status });
       setPlans((prev) => prev.map((p) => (p.MaKeHoach === id ? { ...p, TrangThai: status } : p)));
@@ -230,8 +235,17 @@ export default function TrangKeHoachSanXuatDashboard() {
                           {t("khsx.btn_mrp")}
                         </Button>
                         {ALL_STATUS.map((s) => {
+                          const tat = p.TrangThai === s || !khsxCoTheChuyenSang(p.TrangThai, s);
                           return (
-                            <Button key={s} type="button" size="sm" variant={p.TrangThai === s ? "default" : "outline"} onClick={() => doiTrangThai(p.MaKeHoach, s)}>
+                            <Button
+                              key={s}
+                              type="button"
+                              size="sm"
+                              variant={p.TrangThai === s ? "default" : "outline"}
+                              disabled={tat}
+                              title={tat && p.TrangThai !== s ? t("khsx.status_flow_hint") : undefined}
+                              onClick={() => doiTrangThai(p.MaKeHoach, p.TrangThai, s)}
+                            >
                               {t(`khsx.status_${s.toLowerCase()}`)}
                             </Button>
                           );
