@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { layMaNguoiDungTuUser } from "@/lib/maNguoiDungUser";
 import { useCa } from "@/contexts/NguCanhCa";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -54,6 +55,36 @@ function duongKhoPhuMacDinh(q: string): string {
 
 const queryClient = new QueryClient();
 
+/**
+ * Path so khớp route (bỏ VITE_BASE và tiền tố /mm khi History chưa khớp BrowserRouter basename).
+ * Tránh guard so sánh "/shifts" trong khi pathname thực tế "/mm/shifts" → Navigate lặp vô hạn.
+ */
+function chuanHoaPathnameRoute(pathname: string): string {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  let p = pathname.replace(/\/$/, "") || "/";
+  if (base && base !== "/" && p.startsWith(base)) {
+    p = p.slice(base.length) || "/";
+  }
+  if (!p.startsWith("/")) p = `/${p}`;
+  if (p === "/mm" || p.startsWith("/mm/")) {
+    p = p.replace(/^\/mm\/?/, "/") || "/";
+  }
+  if (!p.startsWith("/")) p = `/${p}`;
+  return p;
+}
+
+/** /shifts hoặc /profile — chỉ dùng pathname từ React Router (không đọc window trong render, tránh lệch RR → dao động + vòng cập nhật). */
+function laTrangMienCaPath(pathnameNorm: string, pathnameRouter: string): boolean {
+  const test = (path: string) => {
+    const p = (path || "").replace(/\/$/, "") || "/";
+    return (
+      /(^|\/)shifts(\/|$)/.test(p) ||
+      /(^|\/)profile(\/|$)/.test(p)
+    );
+  };
+  return test(pathnameNorm) || test(pathnameRouter);
+}
+
 /** True neu dang truy cap qua mang (IP/hostname), khong phai localhost */
 function laTruyCapMang(): boolean {
   if (typeof window === "undefined") return false;
@@ -65,8 +96,7 @@ function laTruyCapMang(): boolean {
 function ChuyenMangVeLogin({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { user, loading } = useAuth();
-  const path = pathname.replace(/^\/mm\/?/, "") || "/";
-  const pathNorm = path.startsWith("/") ? path : "/" + path;
+  const pathNorm = chuanHoaPathnameRoute(pathname);
   const laTrangCongKhai =
     pathNorm === "/auth" || pathNorm === "/forgot-password" || pathNorm === "/reset-password" ||
     pathNorm.startsWith("/auth") || pathNorm.startsWith("/forgot-password") || pathNorm.startsWith("/reset-password");
@@ -91,38 +121,57 @@ const Spinner = () => (
 
 /**
  * Tài khoản đăng nhập qua DB phải có ca đang active của chính mình (GET /api/shifts/active khớp MaNguoiDung).
+ * Chỉ áp dụng cho user được vào **module kho MM** (`duocVaoMm`). User chỉ upk/rma/y_te không vào /shifts qua TuyenVungMm —
+ * nếu vẫn redirect /shifts sẽ bị TuyenVungMm đẩy về /upk|/rma → vòng Navigate vô hạn.
  * Cho phép vào /shifts để bắt đầu ca hoặc xử lý xung đột.
  */
 function TuyenBatBuocCa({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { caHienTai, dangTai } = useCa();
   const location = useLocation();
+  const navigate = useNavigate();
   const maNguoi = layMaNguoiDungTuUser(user);
+  const quyenUser = user ? layQuyenTuUser(user) : "";
+  const canVaoMm = duocVaoMm(quyenUser);
+  /** Tránh gọi navigate('/shifts') lặp khi pathname chưa kịp đổi → Chrome throttling IPC (crbug.com/1038223). */
+  const daBatRedirectTuPath = useRef<string | null>(null);
+
+  const pathNorm = chuanHoaPathnameRoute(location.pathname);
+  const laTrangMienCa = laTrangMienCaPath(pathNorm, location.pathname);
+  const trongCaCuaToi =
+    maNguoi != null &&
+    caHienTai != null &&
+    Number(caHienTai.maNguoiDung) === Number(maNguoi);
+
+  const caMaNguoi = caHienTai?.maNguoiDung;
+
+  useEffect(() => {
+    if (maNguoi == null || dangTai || !canVaoMm) return;
+    const norm = chuanHoaPathnameRoute(location.pathname);
+    const mien = laTrangMienCaPath(norm, location.pathname);
+    if (mien) {
+      daBatRedirectTuPath.current = null;
+      return;
+    }
+    const trongCa = caMaNguoi != null && Number(caMaNguoi) === Number(maNguoi);
+    if (trongCa) {
+      daBatRedirectTuPath.current = null;
+      return;
+    }
+    const from = location.pathname;
+    if (daBatRedirectTuPath.current === from) return;
+    daBatRedirectTuPath.current = from;
+    navigate("/shifts", {
+      replace: true,
+      state: { requireShift: true, from: location.pathname },
+    });
+  }, [maNguoi, dangTai, canVaoMm, location.pathname, navigate, caMaNguoi]);
 
   if (maNguoi == null) return <>{children}</>;
-
+  if (!canVaoMm) return <>{children}</>;
   if (dangTai) return <Spinner />;
-
-  const p = location.pathname.replace(/\/$/, "") || "/";
-  const pathNorm = p.startsWith("/") ? p : `/${p}`;
-  if (pathNorm === "/shifts" || pathNorm.startsWith("/shifts/")) { 
-    return <>{children}</>;
-  }
-  /** Cho phép vào hồ sơ để đăng xuất khi chưa vào ca */
-  if (pathNorm === "/profile") {
-    return <>{children}</>;
-  }
-
-  const trongCaCuaToi = caHienTai != null && caHienTai.maNguoiDung === maNguoi;
-  if (!trongCaCuaToi) {
-    return (
-      <Navigate
-        to="/shifts"
-        replace
-        state={{ requireShift: true, from: location.pathname }}
-      />
-    );
-  }
+  if (laTrangMienCa) return <>{children}</>;
+  if (!trongCaCuaToi) return <Spinner />;
   return <>{children}</>;
 }
 
@@ -248,9 +297,9 @@ const App = () => (
             future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
           >
             <AuthProvider>
-              <CaProvider>
               <ChuyenMangVeLogin>
-              <Routes>
+                <CaProvider>
+                  <Routes>
                 <Route path="/auth" element={<TuyenCongKhai><TrangDangNhap /></TuyenCongKhai>} />
                 <Route path="/login" element={<Navigate to="/auth" replace />} />
                 <Route path="/forgot-password" element={<TuyenCongKhai><TrangQuenMatKhau /></TuyenCongKhai>} />
@@ -296,9 +345,9 @@ const App = () => (
                 <Route path="/admin/roles" element={<TuyenBaoVe><TuyenVungMm><TuyenPhanQuyen quyen={["admin"]}><BoCucMM><TrangBoPhanVaiTro /></BoCucMM></TuyenPhanQuyen></TuyenVungMm></TuyenBaoVe>} />
                 <Route path="/admin/categories" element={<TuyenBaoVe><TuyenVungMm><TuyenPhanQuyen quyen={["admin"]}><BoCucMM><TrangDanhMuc /></BoCucMM></TuyenPhanQuyen></TuyenVungMm></TuyenBaoVe>} />
                 <Route path="*" element={<TrangKhongTimThay />} />
-              </Routes>
+                  </Routes>
+                </CaProvider>
               </ChuyenMangVeLogin>
-              </CaProvider>
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>

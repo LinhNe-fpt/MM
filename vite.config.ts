@@ -37,7 +37,7 @@ function spaFallbackPlugin() {
           pathname.startsWith("/assets");
         const isAppRoute =
           pathname === "/" ||
-          /^\/(auth|warehouse|components|transactions|profile|scan|forgot-password|reset-password|bom|admin|rma-upk|upk|rma|mro)(\/.*)?$/.test(pathname);
+          /^\/(auth|warehouse|components|transactions|profile|scan|forgot-password|reset-password|bom|admin|rma-upk|upk|rma|mro|yte|shifts|khsx)(\/.*)?$/.test(pathname);
         if (isAppRoute && !isStaticOrModule) {
           const q = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
           req.url = (base === "/" ? "/" : base) + "index.html" + q;

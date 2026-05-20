@@ -1,3 +1,5 @@
+/* @refresh reset */
+/** Provider + hook trong cùng file: tránh HMR tạo hai bản context → useAuth/useCa null. */
 import {
   createContext,
   useContext,
@@ -118,19 +120,31 @@ export function CaProvider({ children }: { children: ReactNode }) {
     }
   }, [thuHoiSnapshotCungUser]);
 
+  /** Chỉ theo user.id — tránh object `user` đổi reference mỗi render (context) làm effect chạy lặp → fetch/setState vô hạn. */
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (!user) {
+    if (userId == null) {
       setCaHienTai(null);
       setDangTai(false);
       try {
         sessionStorage.removeItem(CA_SNAPSHOT_KEY);
       } catch { /* ignore */ }
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
       return;
     }
     fetchActive();
     pollRef.current = setInterval(() => fetchActive(true), 30_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [user, fetchActive]);
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [userId, fetchActive]);
 
   const batDauCa = useCallback(async (ghiChu?: string): Promise<KetQuaBatDauCa> => {
     const res = await fetch(`${API_BASE}/api/shifts/start`, {
